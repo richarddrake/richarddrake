@@ -18,13 +18,37 @@
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.\scripts\start.cmd
 ```
 
 打开：
 
 ```text
 http://127.0.0.1:8000
+```
+
+停止服务：
+
+```powershell
+Ctrl + C
+```
+
+如果端口已被旧服务占用，可以执行：
+
+```powershell
+.\scripts\stop.cmd -Port 8000
+```
+
+换端口启动：
+
+```powershell
+.\scripts\start.cmd -Port 8001
+```
+
+开发时如果需要文件变更自动重载：
+
+```powershell
+.\scripts\start.cmd -Reload
 ```
 
 ## 模型配置
