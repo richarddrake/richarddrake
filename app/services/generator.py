@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
 import httpx
+from dotenv import load_dotenv
 
 from app.schemas import UploadedImage
+
+load_dotenv()
 
 
 @dataclass

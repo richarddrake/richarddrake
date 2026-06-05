@@ -39,6 +39,8 @@ $env:OPENAI_MODEL="gpt-4o-mini"
 
 也可以把 `OPENAI_BASE_URL` 指向任意兼容 Chat Completions 的多模态服务。
 
+详细配置步骤见：[docs/MODEL_SETUP.md](docs/MODEL_SETUP.md)
+
 ## 目录
 
 ```text
