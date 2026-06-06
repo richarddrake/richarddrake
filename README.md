@@ -1,40 +1,64 @@
 # 测试用例智能生成系统
 
-一个基于 FastAPI 的轻量全栈应用：用户上传思维导图、流程图、界面截图、Excel、文档或文本材料，并填写需求、上下文与外部链接信息，系统通过多模态大模型生成结构化测试用例，前端流式展示，并自动保存为 Excel 文件供下载。
+一个前后端分离的 AI 测试用例生成系统。用户可以上传思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、文本材料，也可以补充飞书文档/知识库/PRD 链接、用户要求和业务上下文。系统通过多模态大模型或本地演示生成器流式生成结构化测试用例，并自动保存为 Excel 文件供下载。
+
+## 当前架构
+
+```text
+frontend/                  Vue 3 + Vite 前端，默认运行在 127.0.0.1:5173
+app/                       FastAPI 后端 API，默认运行在 127.0.0.1:8000
+generated/                 运行时生成的 Excel 文件
+docs/                      配置与输入材料说明
+scripts/                   Windows 启动和端口释放脚本
+```
+
+前端和后端已经分离：
+
+- 前端页面由 `frontend/` 中的 Vue 应用实现。
+- 后端只提供 API、流式生成和 Excel 下载，不再托管静态页面。
+- 开发环境下，Vite 会把 `/api` 请求代理到 `http://127.0.0.1:8000`。
 
 ## 功能
 
+- 科技风 Vue 前端界面，包含左侧导航栏、输入工作台、用例矩阵和流式日志
 - 多源材料上传与预览
-- 支持图片、Excel、CSV、Word、PDF、Markdown、JSON、文本文件、飞书/网页链接
-- 需求、上下文背景输入
+- 支持图片、Excel、CSV、Word、PDF、Markdown、JSON、YAML、文本文件、飞书/网页链接
+- 需求、上下文背景、外部文档链接输入
 - SSE 流式输出生成过程与测试用例
 - 测试用例卡片视图、表格视图、搜索过滤
 - 自动保存 Excel 并提供下载
 - 支持 OpenAI-compatible 多模态接口
 - 未配置模型 Key 时提供本地演示生成器，便于验证完整流程
 
-## 启动
+## 后端启动
+
+第一次运行先安装 Python 依赖：
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+```
+
+启动 FastAPI 后端：
+
+```powershell
 .\scripts\start.cmd
 ```
 
-打开：
+后端地址：
 
 ```text
 http://127.0.0.1:8000
 ```
 
-停止服务：
+API 文档：
 
-```powershell
-Ctrl + C
+```text
+http://127.0.0.1:8000/docs
 ```
 
-如果端口已被旧服务占用，可以执行：
+如果 8000 端口被旧进程占用：
 
 ```powershell
 .\scripts\stop.cmd -Port 8000
@@ -46,10 +70,67 @@ Ctrl + C
 .\scripts\start.cmd -Port 8001
 ```
 
-开发时如果需要文件变更自动重载：
+开发时启用后端自动重载：
 
 ```powershell
 .\scripts\start.cmd -Reload
+```
+
+## 前端启动
+
+进入前端目录安装依赖：
+
+```powershell
+cd frontend
+npm.cmd install
+```
+
+也可以直接在项目根目录运行前端启动脚本，脚本会在缺少 `node_modules` 时自动执行 `npm install`：
+
+```powershell
+.\scripts\start-frontend.cmd
+```
+
+前端页面地址：
+
+```text
+http://127.0.0.1:5173
+```
+
+如果 5173 端口被旧进程占用：
+
+```powershell
+.\scripts\stop-frontend.cmd -Port 5173
+```
+
+换端口启动：
+
+```powershell
+.\scripts\start-frontend.cmd -Port 5174
+```
+
+如果后端不是运行在 `127.0.0.1:8000`，可以在 `frontend/.env` 中指定：
+
+```text
+VITE_API_BASE_URL=http://127.0.0.1:8001
+```
+
+## 推荐运行顺序
+
+```powershell
+.\scripts\start.cmd
+```
+
+另开一个 PowerShell 窗口：
+
+```powershell
+.\scripts\start-frontend.cmd
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:5173
 ```
 
 ## 模型配置
@@ -82,20 +163,15 @@ $env:OPENAI_MODEL="gpt-4o-mini"
 
 详细说明见：[docs/MATERIAL_INPUTS.md](docs/MATERIAL_INPUTS.md)
 
-## 目录
+## 构建前端
+
+```powershell
+cd frontend
+npm.cmd run build
+```
+
+构建产物位于：
 
 ```text
-app/
-  main.py                    FastAPI 入口
-  schemas.py                 数据结构与规范化逻辑
-  services/
-    generator.py             LLM 生成器与本地演示生成器
-    excel_exporter.py        Excel 导出
-static/
-  index.html                 前端页面
-  styles.css                 页面样式
-  app.js                     上传、流式读取与渲染逻辑
-generated/                   运行时生成的 Excel 文件
-docs/
-  MATERIAL_INPUTS.md          多源材料输入说明
+frontend/dist/
 ```

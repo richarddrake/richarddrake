@@ -8,8 +8,7 @@ from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.schemas import UploadedMaterial, normalize_case
 from app.services.excel_exporter import save_cases_to_excel
@@ -18,7 +17,6 @@ from app.services.material_parser import build_material_context, read_upload_mat
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "static"
 GENERATED_DIR = BASE_DIR / "generated"
 
 app = FastAPI(title="测试用例智能生成系统", version="1.0.0")
@@ -29,12 +27,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index() -> str:
-    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+@app.get("/")
+async def root() -> dict[str, str]:
+    return {
+        "status": "ok",
+        "service": "测试用例智能生成系统 API",
+        "docs": "/docs",
+    }
 
 
 @app.post("/api/generate")
