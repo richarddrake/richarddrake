@@ -1022,6 +1022,126 @@ td {
   box-shadow: var(--shadow);
 }
 
+.history-panel {
+  margin-top: 16px;
+  padding: 18px;
+}
+
+.history-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1.4fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.database-status {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--amber), transparent 42%);
+  border-radius: var(--radius);
+  color: var(--amber);
+  background: color-mix(in srgb, var(--surface-strong), transparent 8%);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.database-status.connected {
+  color: var(--teal);
+  border-color: color-mix(in srgb, var(--teal), transparent 42%);
+}
+
+.database-status svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+
+.database-status span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-search {
+  min-width: 0;
+}
+
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.history-card {
+  display: grid;
+  gap: 12px;
+  min-height: 218px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(30, 211, 255, 0.06), transparent 58%),
+    var(--surface-strong);
+}
+
+.history-card.active {
+  border-color: color-mix(in srgb, var(--teal), transparent 34%);
+  box-shadow: var(--glow);
+}
+
+.history-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-card h3 {
+  margin: 5px 0 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.history-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.history-meta,
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.history-meta span {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--line-strong), transparent 35%);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-soft), transparent 10%);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.history-actions {
+  margin-top: auto;
+}
+
+.history-empty {
+  grid-column: 1 / -1;
+  min-height: 220px;
+}
+
 @media (max-width: 1180px) {
   .app-shell {
     grid-template-columns: 82px minmax(0, 1fr);
@@ -1047,6 +1167,10 @@ td {
   }
 
   .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .history-toolbar {
     grid-template-columns: 1fr;
   }
 
@@ -1121,7 +1245,8 @@ td {
   }
 
   .composer-actions,
-  .result-actions {
+  .result-actions,
+  .history-actions {
     justify-content: stretch;
   }
 

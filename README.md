@@ -27,6 +27,7 @@ scripts/                   Windows 启动和端口释放脚本
 - SSE 流式输出生成过程与测试用例
 - 测试用例卡片视图、表格视图、搜索过滤
 - 自动保存 Excel 并提供下载
+- 支持 MySQL 保存生成历史和用例明细
 - 支持 OpenAI-compatible 多模态接口
 - 未配置模型 Key 时提供本地演示生成器，便于验证完整流程
 
@@ -146,6 +147,30 @@ $env:OPENAI_MODEL="gpt-4o-mini"
 也可以把 `OPENAI_BASE_URL` 指向任意兼容 Chat Completions 的多模态服务。
 
 详细配置步骤见：[docs/MODEL_SETUP.md](docs/MODEL_SETUP.md)
+
+## MySQL 历史记录
+
+系统支持将生成会话、输入摘要、材料摘要、测试用例明细和 Excel 下载地址保存到 MySQL。
+
+配置入口在 `.env`：
+
+```text
+DATABASE_ENABLED=true
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=ai_test_user
+MYSQL_PASSWORD=your-mysql-password
+MYSQL_DATABASE=ai_testcase
+MYSQL_CHARSET=utf8mb4
+```
+
+后端启动时会自动创建表。连接状态可以访问：
+
+```text
+http://127.0.0.1:8000/api/database/status
+```
+
+详细配置步骤见：[docs/MYSQL_SETUP.md](docs/MYSQL_SETUP.md)
 
 ## 输入材料
 

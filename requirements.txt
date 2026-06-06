@@ -7,3 +7,5 @@ python-dotenv
 pypdf
 python-docx
 xlrd
+SQLAlchemy
+PyMySQL

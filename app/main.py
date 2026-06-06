@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.schemas import UploadedMaterial, normalize_case
+from app.services.database import (
+    get_database_status,
+    get_history_detail,
+    init_database,
+    list_history,
+    record_generation_session,
+)
 from app.services.excel_exporter import save_cases_to_excel
 from app.services.generator import GenerationEvent, generate_test_cases
 from app.services.material_parser import build_material_context, read_upload_materials
@@ -29,6 +37,11 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def startup() -> None:
+    init_database()
+
+
 @app.get("/")
 async def root() -> dict[str, str]:
     return {
@@ -36,6 +49,27 @@ async def root() -> dict[str, str]:
         "service": "测试用例智能生成系统 API",
         "docs": "/docs",
     }
+
+
+@app.get("/api/database/status")
+async def database_status() -> dict:
+    return get_database_status()
+
+
+@app.get("/api/history")
+async def history(
+    limit: int = Query(default=20, ge=1, le=100),
+    keyword: str = Query(default=""),
+) -> dict:
+    return list_history(limit=limit, keyword=keyword)
+
+
+@app.get("/api/history/{session_id}")
+async def history_detail(session_id: str) -> dict:
+    detail = get_history_detail(session_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="历史记录不存在，或 MySQL 暂不可用。")
+    return detail
 
 
 @app.post("/api/generate")
@@ -106,12 +140,30 @@ async def _stream_generation(
                 yield _sse(event.kind, event.payload)
 
         excel_path = save_cases_to_excel(cases, GENERATED_DIR, session_id)
+        history_status = await asyncio.to_thread(
+            record_generation_session,
+            session_id=session_id,
+            requirements=requirements,
+            context=context,
+            references=references,
+            materials=materials,
+            cases=cases,
+            excel_path=excel_path,
+        )
+        if history_status == "saved":
+            yield _sse("thought", {"text": "历史记录已写入 MySQL。"})
+        elif history_status == "disabled":
+            yield _sse("thought", {"text": "MySQL 历史记录未启用，当前结果仅保存为 Excel。"})
+        else:
+            yield _sse("thought", {"text": "MySQL 暂不可用，当前结果已保存为 Excel。"})
+
         yield _sse(
             "done",
             {
                 "sessionId": session_id,
                 "count": len(cases),
                 "downloadUrl": f"/api/download/{excel_path.name}",
+                "historyStatus": history_status,
             },
         )
     except Exception as exc:

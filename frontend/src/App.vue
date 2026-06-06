@@ -22,6 +22,10 @@
           <List aria-hidden="true" />
           流式日志
         </a>
+        <a class="nav-item" href="#historyTitle" @click="refreshHistory">
+          <History aria-hidden="true" />
+          历史记录
+        </a>
         <a class="nav-item" href="#downloadButton">
           <FileDown aria-hidden="true" />
           Excel 导出
@@ -31,7 +35,7 @@
       <div class="side-card">
         <span class="side-card-label">MODEL LINK</span>
         <strong>OpenAI-compatible</strong>
-        <p>支持图片、表格、文档、文本、链接与本地演示回退。</p>
+        <p>支持图片、表格、文档、文本、链接、MySQL 历史记录与本地演示回退。</p>
       </div>
 
       <div class="side-metrics">
@@ -282,6 +286,71 @@
           </div>
         </section>
       </section>
+
+      <section class="panel history-panel" aria-labelledby="historyTitle">
+        <div class="panel-heading result-heading">
+          <div>
+            <p class="eyebrow">MySQL Archive</p>
+            <h2 id="historyTitle">历史记录</h2>
+          </div>
+          <div class="result-actions">
+            <button class="icon-button" type="button" aria-label="刷新历史记录" title="刷新历史记录" :disabled="isHistoryLoading" @click="refreshHistory">
+              <RefreshCw aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <div class="history-toolbar">
+          <div class="database-status" :class="{ connected: databaseConnected }">
+            <Database aria-hidden="true" />
+            <span>{{ databaseMessage }}</span>
+          </div>
+          <div class="search-box history-search">
+            <Search aria-hidden="true" />
+            <input v-model="historyKeyword" type="search" placeholder="搜索历史会话、需求、上下文" @keyup.enter="fetchHistory" />
+          </div>
+          <button class="secondary-button" type="button" :disabled="isHistoryLoading" @click="fetchHistory">
+            <Search aria-hidden="true" />
+            查询
+          </button>
+        </div>
+
+        <div class="history-grid" aria-live="polite">
+          <article
+            v-for="item in historyItems"
+            :key="item.sessionId"
+            class="history-card"
+            :class="{ active: selectedHistoryId === item.sessionId }"
+          >
+            <header>
+              <div>
+                <span class="side-card-label">{{ formatDate(item.createdAt) }}</span>
+                <h3>{{ item.requirementsSummary || item.contextSummary || "未填写摘要" }}</h3>
+              </div>
+              <span class="pill">{{ item.caseCount }} 条</span>
+            </header>
+            <p>{{ item.contextSummary || "无上下文摘要" }}</p>
+            <div class="history-meta">
+              <span>材料 {{ item.materialCount }}</span>
+              <span>{{ prioritySummary(item.summary) }}</span>
+              <span>{{ item.status }}</span>
+            </div>
+            <div class="history-actions">
+              <button class="secondary-button" type="button" @click="loadHistoryDetail(item.sessionId)">
+                <FileText aria-hidden="true" />
+                查看
+              </button>
+              <button class="download-button" type="button" :disabled="!item.downloadUrl" @click="downloadHistoryExcel(item.downloadUrl)">
+                <Download aria-hidden="true" />
+                Excel
+              </button>
+            </div>
+          </article>
+          <div v-if="!historyItems.length" class="empty-state history-empty">
+            {{ isHistoryLoading ? "正在读取 MySQL 历史记录" : "暂无历史记录" }}
+          </div>
+        </div>
+      </section>
     </main>
     <div v-if="toastMessage" class="toast">{{ toastMessage }}</div>
   </div>
@@ -295,8 +364,11 @@ import {
   Download,
   FileDown,
   FileText,
+  Database,
+  History,
   List,
   Moon,
+  RefreshCw,
   Search,
   Trash2,
   Upload,
@@ -338,16 +410,22 @@ const streamView = ref(null);
 const selectedFiles = ref([]);
 const cases = ref([]);
 const logs = ref([]);
+const historyItems = ref([]);
 const downloadUrl = ref("");
 const activeView = ref("cards");
 const isGenerating = ref(false);
 const isDragging = ref(false);
+const isHistoryLoading = ref(false);
 const requirements = ref("");
 const context = ref("");
 const references = ref("");
 const statusText = ref("待生成");
 const progress = ref(0);
 const searchText = ref("");
+const historyKeyword = ref("");
+const selectedHistoryId = ref("");
+const databaseMessage = ref("MySQL 状态检测中");
+const databaseConnected = ref(false);
 const toastMessage = ref("");
 let toastTimer = null;
 let logCounter = 0;
@@ -373,6 +451,8 @@ const priorityMix = computed(() => {
 
 onMounted(() => {
   document.body.classList.add("dark");
+  fetchDatabaseStatus();
+  fetchHistory();
 });
 
 function toggleTheme() {
@@ -546,6 +626,11 @@ function handleEvent(eventName, data) {
     statusText.value = `完成，已保存 ${data.count || cases.value.length} 条`;
     progress.value = 100;
     appendLog("Excel 已生成。");
+    if (data.historyStatus === "saved") {
+      appendLog("历史记录已保存到 MySQL。");
+    }
+    fetchDatabaseStatus();
+    fetchHistory();
     return;
   }
 
@@ -598,9 +683,72 @@ async function copyCases() {
   }
 }
 
+async function fetchDatabaseStatus() {
+  try {
+    const response = await fetch(apiUrl("/api/database/status"));
+    const data = await response.json();
+    databaseConnected.value = Boolean(data.connected);
+    databaseMessage.value = data.message || (data.connected ? "MySQL 连接正常" : "MySQL 未连接");
+  } catch (error) {
+    databaseConnected.value = false;
+    databaseMessage.value = "MySQL 状态读取失败";
+  }
+}
+
+async function fetchHistory() {
+  isHistoryLoading.value = true;
+  try {
+    const params = new URLSearchParams({
+      limit: "30",
+      keyword: historyKeyword.value.trim(),
+    });
+    const response = await fetch(apiUrl(`/api/history?${params.toString()}`));
+    const data = await response.json();
+    historyItems.value = data.items || [];
+    databaseConnected.value = Boolean(data.connected);
+    databaseMessage.value = data.message && data.message !== "ok" ? data.message : databaseMessage.value;
+  } catch (error) {
+    historyItems.value = [];
+    databaseConnected.value = false;
+    databaseMessage.value = "历史记录读取失败";
+  } finally {
+    isHistoryLoading.value = false;
+  }
+}
+
+function refreshHistory() {
+  fetchDatabaseStatus();
+  fetchHistory();
+}
+
+async function loadHistoryDetail(sessionId) {
+  try {
+    const response = await fetch(apiUrl(`/api/history/${encodeURIComponent(sessionId)}`));
+    if (!response.ok) {
+      throw new Error("历史记录不存在或 MySQL 暂不可用");
+    }
+    const detail = await response.json();
+    selectedHistoryId.value = sessionId;
+    cases.value = detail.cases || [];
+    downloadUrl.value = detail.downloadUrl || "";
+    statusText.value = `已加载历史 ${cases.value.length} 条`;
+    progress.value = cases.value.length ? 100 : 0;
+    activeView.value = "cards";
+    appendLog(`已加载历史记录：${sessionId}`);
+  } catch (error) {
+    showToast(error.message || "读取历史记录失败");
+  }
+}
+
 function downloadExcel() {
   if (downloadUrl.value) {
     window.location.href = apiUrl(downloadUrl.value);
+  }
+}
+
+function downloadHistoryExcel(url) {
+  if (url) {
+    window.location.href = apiUrl(url);
   }
 }
 
@@ -646,6 +794,25 @@ function toList(value) {
 
 function priorityClass(priority) {
   return `priority-${String(priority || "p1").toLowerCase()}`;
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function prioritySummary(summary) {
+  const mix = summary?.priorityMix || {};
+  const text = Object.entries(mix)
+    .map(([key, value]) => `${key}:${value}`)
+    .join(" / ");
+  return text || "无优先级";
 }
 
 function apiUrl(path) {
