@@ -4,6 +4,7 @@ const previewGrid = document.querySelector("#previewGrid");
 const previewTemplate = document.querySelector("#previewTemplate");
 const requirementsInput = document.querySelector("#requirements");
 const contextInput = document.querySelector("#context");
+const referencesInput = document.querySelector("#references");
 const generateButton = document.querySelector("#generateButton");
 const clearButton = document.querySelector("#clearButton");
 const downloadButton = document.querySelector("#downloadButton");
@@ -24,6 +25,34 @@ let cases = [];
 let downloadUrl = "";
 let activeView = "cards";
 let isGenerating = false;
+
+const MAX_CLIENT_FILE_MB = 20;
+const SUPPORTED_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "gif",
+  "bmp",
+  "svg",
+  "xlsx",
+  "xlsm",
+  "xls",
+  "csv",
+  "tsv",
+  "txt",
+  "md",
+  "markdown",
+  "json",
+  "yaml",
+  "yml",
+  "log",
+  "feature",
+  "html",
+  "htm",
+  "docx",
+  "pdf",
+]);
 
 renderEmptyState();
 
@@ -73,14 +102,26 @@ document.querySelectorAll(".tab-button").forEach((button) => {
 });
 
 function addFiles(files) {
-  const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-  for (const file of imageFiles) {
+  const acceptedFiles = [];
+  const rejectedNames = [];
+  for (const file of files) {
+    if (isSupportedFile(file) && file.size <= MAX_CLIENT_FILE_MB * 1024 * 1024) {
+      acceptedFiles.push(file);
+    } else {
+      rejectedNames.push(file.name);
+    }
+  }
+
+  for (const file of acceptedFiles) {
     const duplicated = selectedFiles.some(
       (item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified,
     );
     if (!duplicated) {
       selectedFiles.push(file);
     }
+  }
+  if (rejectedNames.length) {
+    showToast(`已忽略不支持或超过 ${MAX_CLIENT_FILE_MB}MB 的文件：${rejectedNames.join("、")}`);
   }
   renderPreviews();
 }
@@ -90,11 +131,22 @@ function renderPreviews() {
   for (const [index, file] of selectedFiles.entries()) {
     const node = previewTemplate.content.firstElementChild.cloneNode(true);
     const image = node.querySelector("img");
+    const thumb = node.querySelector(".file-thumb");
+    const badge = node.querySelector(".file-badge");
     const caption = node.querySelector("figcaption");
     const removeButton = node.querySelector("button");
-    image.src = URL.createObjectURL(file);
-    image.alt = file.name;
-    caption.textContent = file.name;
+    const extension = getFileExtension(file.name).toUpperCase() || "FILE";
+    if (file.type.startsWith("image/")) {
+      image.src = URL.createObjectURL(file);
+      image.alt = file.name;
+      badge.textContent = "IMG";
+    } else {
+      thumb.classList.add("file-thumb-generic");
+      image.removeAttribute("src");
+      image.alt = "";
+      badge.textContent = extension;
+    }
+    caption.textContent = `${file.name} · ${formatFileSize(file.size)}`;
     removeButton.addEventListener("click", () => {
       selectedFiles.splice(index, 1);
       renderPreviews();
@@ -105,15 +157,21 @@ function renderPreviews() {
 
 async function startGeneration() {
   if (isGenerating) return;
-  if (!selectedFiles.length && !requirementsInput.value.trim() && !contextInput.value.trim()) {
-    showToast("请至少上传图片或填写需求背景。");
+  if (
+    !selectedFiles.length &&
+    !requirementsInput.value.trim() &&
+    !contextInput.value.trim() &&
+    !referencesInput.value.trim()
+  ) {
+    showToast("请至少上传材料、填写需求背景或粘贴文档链接。");
     return;
   }
 
   const formData = new FormData();
-  selectedFiles.forEach((file) => formData.append("images", file));
+  selectedFiles.forEach((file) => formData.append("files", file));
   formData.append("requirements", requirementsInput.value.trim());
   formData.append("context", contextInput.value.trim());
+  formData.append("references", referencesInput.value.trim());
 
   prepareGenerationState();
 
@@ -362,6 +420,7 @@ function resetAll() {
   downloadUrl = "";
   requirementsInput.value = "";
   contextInput.value = "";
+  referencesInput.value = "";
   downloadButton.disabled = true;
   copyButton.disabled = true;
   previewGrid.replaceChildren();
@@ -398,4 +457,26 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function isSupportedFile(file) {
+  if (file.type.startsWith("image/")) {
+    return true;
+  }
+  return SUPPORTED_EXTENSIONS.has(getFileExtension(file.name));
+}
+
+function getFileExtension(filename) {
+  const parts = filename.toLowerCase().split(".");
+  return parts.length > 1 ? parts.pop() : "";
+}
+
+function formatFileSize(size) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }

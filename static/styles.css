@@ -482,6 +482,26 @@ h2 {
   font-size: 13px;
 }
 
+.material-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.material-hints span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--cyan), transparent 60%);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(30, 211, 255, 0.08);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .preview-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
@@ -500,11 +520,53 @@ h2 {
   aspect-ratio: 1 / 0.82;
 }
 
-.preview-card img {
+.file-thumb {
+  position: relative;
   width: 100%;
   height: calc(100% - 28px);
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px),
+    color-mix(in srgb, var(--surface-soft), transparent 8%);
+  background-size: 18px 18px;
+}
+
+.file-thumb img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.file-thumb-generic img {
+  display: none;
+}
+
+.file-badge {
+  display: grid;
+  place-items: center;
+  min-width: 48px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--teal), transparent 42%);
+  border-radius: 8px;
+  color: var(--teal);
+  background: rgba(30, 255, 194, 0.10);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.file-thumb:not(.file-thumb-generic) .file-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  min-width: 34px;
+  height: 22px;
+  padding: 0 7px;
+  color: #071016;
+  background: var(--teal);
 }
 
 .preview-card figcaption {

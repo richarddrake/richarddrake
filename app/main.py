@@ -11,15 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.schemas import UploadedImage, normalize_case
+from app.schemas import UploadedMaterial, normalize_case
 from app.services.excel_exporter import save_cases_to_excel
 from app.services.generator import GenerationEvent, generate_test_cases
+from app.services.material_parser import build_material_context, read_upload_materials
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 GENERATED_DIR = BASE_DIR / "generated"
-MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
 app = FastAPI(title="测试用例智能生成系统", version="1.0.0")
 app.add_middleware(
@@ -41,14 +41,17 @@ async def index() -> str:
 async def generate(
     requirements: str = Form(default=""),
     context: str = Form(default=""),
+    references: str = Form(default=""),
+    files: Optional[list[UploadFile]] = File(default=None),
     images: Optional[list[UploadFile]] = File(default=None),
 ) -> StreamingResponse:
-    uploaded_images = await _read_images(images or [])
-    if not uploaded_images and not requirements.strip() and not context.strip():
-        raise HTTPException(status_code=400, detail="请至少上传一张图片或填写需求背景。")
+    uploaded_files = [*(files or []), *(images or [])]
+    materials = await read_upload_materials(uploaded_files)
+    if not materials and not requirements.strip() and not context.strip() and not references.strip():
+        raise HTTPException(status_code=400, detail="请至少上传材料、填写需求背景或粘贴文档链接。")
 
     session_id = datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8]
-    stream = _stream_generation(session_id, requirements, context, uploaded_images)
+    stream = _stream_generation(session_id, requirements, context, references, materials)
     return StreamingResponse(
         stream,
         media_type="text/event-stream",
@@ -77,34 +80,21 @@ async def download(filename: str) -> FileResponse:
     )
 
 
-async def _read_images(files: list[UploadFile]) -> list[UploadedImage]:
-    uploaded_images: list[UploadedImage] = []
-    for file in files:
-        if not file.filename:
-            continue
-        content_type = file.content_type or "application/octet-stream"
-        if not content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail=f"{file.filename} 不是图片文件。")
-        data = await file.read()
-        if len(data) > MAX_IMAGE_BYTES:
-            raise HTTPException(status_code=413, detail=f"{file.filename} 超过 12MB。")
-        uploaded_images.append(
-            UploadedImage(filename=file.filename, content_type=content_type, data=data)
-        )
-    return uploaded_images
-
-
 async def _stream_generation(
     session_id: str,
     requirements: str,
     context: str,
-    images: list[UploadedImage],
+    references: str,
+    materials: list[UploadedMaterial],
 ) -> AsyncIterator[str]:
     cases = []
-    yield _sse("status", {"text": "材料已接收，正在解析视觉信息与业务约束。"})
+    material_context = build_material_context(materials, references)
+    yield _sse("status", {"text": f"已接收 {len(materials)} 个材料，正在解析多源信息与业务约束。"})
+    for material in materials:
+        yield _sse("thought", {"text": f"材料：{material.describe()}"})
 
     try:
-        async for event in generate_test_cases(requirements, context, images):
+        async for event in generate_test_cases(requirements, context, references, materials, material_context):
             if event.kind == "case":
                 case = normalize_case(event.payload, len(cases) + 1)
                 cases.append(case)

@@ -58,7 +58,7 @@
         <div class="side-card">
           <span class="side-card-label">MODEL LINK</span>
           <strong>OpenAI-compatible</strong>
-          <p>支持图片输入、流式输出和本地演示回退。</p>
+          <p>支持图片、表格、文档、文本、链接与本地演示回退。</p>
         </div>
 
         <div class="side-metrics">
@@ -92,7 +92,7 @@
         <section class="signal-row" aria-label="系统状态">
           <div class="signal-card">
             <span>INPUT</span>
-            <strong>Images + Context</strong>
+            <strong>Multi-source Input</strong>
           </div>
           <div class="signal-card">
             <span>ENGINE</span>
@@ -114,7 +114,13 @@
               <span class="step-chip">01</span>
             </div>
 
-            <input id="fileInput" class="sr-only" type="file" accept="image/*" multiple />
+            <input
+              id="fileInput"
+              class="sr-only"
+              type="file"
+              accept="image/*,.xlsx,.xlsm,.xls,.csv,.tsv,.txt,.md,.markdown,.json,.yaml,.yml,.log,.feature,.html,.htm,.docx,.pdf"
+              multiple
+            />
             <label class="upload-zone" id="dropZone" for="fileInput">
               <span class="upload-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
@@ -123,9 +129,17 @@
                   <path d="M20 16.5V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2.5"></path>
                 </svg>
               </span>
-              <span class="upload-title">上传思维导图、流程图或界面截图</span>
-              <span class="upload-subtitle">PNG / JPG / WebP / GIF</span>
+              <span class="upload-title">上传图片、Excel、Word、PDF、CSV 或文本材料</span>
+              <span class="upload-subtitle">图片会作为视觉输入，文档和表格会先抽取文本</span>
             </label>
+
+            <div class="material-hints" aria-label="支持的材料类型">
+              <span>图片</span>
+              <span>Excel/CSV</span>
+              <span>Word/PDF</span>
+              <span>TXT/MD/JSON</span>
+              <span>飞书链接</span>
+            </div>
 
             <div class="preview-grid" id="previewGrid" aria-live="polite"></div>
 
@@ -137,6 +151,11 @@
             <div class="field-group">
               <label for="context">上下文背景</label>
               <textarea id="context" rows="6" placeholder="例如：系统面向企业内部用户，流程包含发起、主管审批、财务复核和归档"></textarea>
+            </div>
+
+            <div class="field-group">
+              <label for="references">外部文档 / 飞书链接</label>
+              <textarea id="references" rows="4" placeholder="粘贴飞书文档、知识库、PRD、接口文档链接；私有文档建议同时导出 Word/PDF/Excel 上传，或把关键内容粘贴到上下文背景中"></textarea>
             </div>
 
             <div class="composer-actions">
@@ -244,7 +263,10 @@
 
     <template id="previewTemplate">
       <figure class="preview-card">
-        <img alt="" />
+        <div class="file-thumb">
+          <img alt="" />
+          <span class="file-badge"></span>
+        </div>
         <figcaption></figcaption>
         <button type="button" aria-label="移除图片" title="移除图片">
           <svg viewBox="0 0 24 24" aria-hidden="true">

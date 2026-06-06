@@ -1,10 +1,11 @@
 # 测试用例智能生成系统
 
-一个基于 FastAPI 的轻量全栈应用：用户上传思维导图、流程图或界面截图，并填写需求与上下文信息，系统通过多模态大模型生成结构化测试用例，前端流式展示，并自动保存为 Excel 文件供下载。
+一个基于 FastAPI 的轻量全栈应用：用户上传思维导图、流程图、界面截图、Excel、文档或文本材料，并填写需求、上下文与外部链接信息，系统通过多模态大模型生成结构化测试用例，前端流式展示，并自动保存为 Excel 文件供下载。
 
 ## 功能
 
-- 多图片上传与预览
+- 多源材料上传与预览
+- 支持图片、Excel、CSV、Word、PDF、Markdown、JSON、文本文件、飞书/网页链接
 - 需求、上下文背景输入
 - SSE 流式输出生成过程与测试用例
 - 测试用例卡片视图、表格视图、搜索过滤
@@ -65,6 +66,22 @@ $env:OPENAI_MODEL="gpt-4o-mini"
 
 详细配置步骤见：[docs/MODEL_SETUP.md](docs/MODEL_SETUP.md)
 
+## 输入材料
+
+系统现在支持多种输入来源：
+
+```text
+图片：PNG / JPG / WebP / GIF / BMP / SVG
+表格：XLSX / XLSM / XLS / CSV / TSV
+文档：DOCX / PDF
+文本：TXT / MD / JSON / YAML / LOG / FEATURE / HTML
+链接：飞书文档、知识库、PRD、接口文档或其他网页链接
+```
+
+私有飞书文档通常需要登录授权，系统不会直接读取你的飞书账号内容。推荐同时上传导出的 Word/PDF/Excel，或把关键内容粘贴到“上下文背景”中。
+
+详细说明见：[docs/MATERIAL_INPUTS.md](docs/MATERIAL_INPUTS.md)
+
 ## 目录
 
 ```text
@@ -79,4 +96,6 @@ static/
   styles.css                 页面样式
   app.js                     上传、流式读取与渲染逻辑
 generated/                   运行时生成的 Excel 文件
+docs/
+  MATERIAL_INPUTS.md          多源材料输入说明
 ```

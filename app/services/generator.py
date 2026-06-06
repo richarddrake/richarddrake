@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator
 import httpx
 from dotenv import load_dotenv
 
-from app.schemas import UploadedImage
+from app.schemas import UploadedMaterial
 
 load_dotenv()
 
@@ -23,13 +23,22 @@ class GenerationEvent:
 async def generate_test_cases(
     requirements: str,
     context: str,
-    images: list[UploadedImage],
+    references: str,
+    materials: list[UploadedMaterial],
+    material_context: str,
 ) -> AsyncIterator[GenerationEvent]:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if api_key:
         emitted_cases = 0
         try:
-            async for event in _generate_with_openai(requirements, context, images, api_key):
+            async for event in _generate_with_openai(
+                requirements,
+                context,
+                references,
+                materials,
+                material_context,
+                api_key,
+            ):
                 if event.kind == "case":
                     emitted_cases += 1
                 yield event
@@ -45,14 +54,16 @@ async def generate_test_cases(
                 {"text": f"模型调用暂不可用，已切换本地生成器：{type(exc).__name__}"},
             )
 
-    async for event in _generate_demo(requirements, context, images):
+    async for event in _generate_demo(requirements, context, references, materials, material_context):
         yield event
 
 
 async def _generate_with_openai(
     requirements: str,
     context: str,
-    images: list[UploadedImage],
+    references: str,
+    materials: list[UploadedMaterial],
+    material_context: str,
     api_key: str,
 ) -> AsyncIterator[GenerationEvent]:
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
@@ -63,10 +74,10 @@ async def _generate_with_openai(
     content: list[dict[str, Any]] = [
         {
             "type": "text",
-            "text": _build_prompt(requirements, context, images),
+            "text": _build_prompt(requirements, context, references, materials, material_context),
         }
     ]
-    for image in images:
+    for image in [item for item in materials if item.is_image]:
         content.append(
             {
                 "type": "image_url",
@@ -84,8 +95,9 @@ async def _generate_with_openai(
                 "role": "system",
                 "content": (
                     "你是资深测试架构师和质量工程专家。"
-                    "你擅长从思维导图、流程图、界面截图和背景信息中抽取业务规则、"
-                    "页面状态、流程分支、异常路径、边界条件和质量风险。"
+                    "你擅长从思维导图、流程图、界面截图、Excel 表格、Word/PDF 文档、"
+                    "文本需求、飞书文档链接和背景信息中抽取业务规则、页面状态、"
+                    "流程分支、异常路径、边界条件和质量风险。"
                 ),
             },
             {"role": "user", "content": content},
@@ -127,17 +139,29 @@ async def _generate_with_openai(
         yield event
 
 
-def _build_prompt(requirements: str, context: str, images: list[UploadedImage]) -> str:
-    image_summary = "\n".join(
-        f"- {image.filename} ({image.content_type}, {image.size_kb} KB)"
-        for image in images
-    ) or "- 未上传图片"
+def _build_prompt(
+    requirements: str,
+    context: str,
+    references: str,
+    materials: list[UploadedMaterial],
+    material_context: str,
+) -> str:
+    material_summary = "\n".join(f"- {item.describe()}" for item in materials) or "- 未上传文件"
+    image_count = sum(1 for item in materials if item.is_image)
 
     return f"""
-请根据上传的图片材料、用户要求和上下文，生成专业、覆盖全面、可落地执行的测试用例。
+请根据上传的多源材料、用户要求和上下文，生成专业、覆盖全面、可落地执行的测试用例。
 
-图片材料：
-{image_summary}
+材料清单：
+{material_summary}
+
+材料类型说明：
+- 图片材料数量：{image_count}
+- 表格、文档、文本、PDF 等可解析文件内容会出现在“抽取文本材料”中。
+- 飞书文档、网页、知识库等链接会出现在“外部文档/链接”中；如果链接是私有文档，只能根据链接标题、用户上下文和用户粘贴/导出的内容推断。
+
+抽取文本材料：
+{material_context or "无"}
 
 用户要求：
 {requirements or "无"}
@@ -145,10 +169,13 @@ def _build_prompt(requirements: str, context: str, images: list[UploadedImage]) 
 上下文背景：
 {context or "无"}
 
+外部文档/链接状态：
+{"已提供，详见抽取文本材料" if references.strip() else "无"}
+
 输出要求：
 1. 严格只输出 NDJSON，每一行都是一个独立 JSON 对象，不要输出 Markdown、代码块或解释性段落。
 2. 先输出 2 到 4 行 event 为 thought 的对象，用于展示识别到的模块、流程和风险。
-3. 再输出 12 到 30 行 event 为 case 的对象，覆盖主流程、分支流程、异常流程、边界值、权限、数据一致性、兼容性、易用性、安全性和性能风险。
+3. 再输出 12 到 30 行 event 为 case 的对象，覆盖主流程、分支流程、异常流程、边界值、权限、数据一致性、兼容性、易用性、安全性、性能风险，以及输入材料中暴露出的表格字段、文档规则和链接来源。
 4. 每条 case 必须包含这些字段：
    event, id, module, title, priority, case_type, scenario, preconditions, steps, expected_results, test_data, tags, source
 5. preconditions、steps、expected_results、tags 必须是字符串数组。
@@ -189,14 +216,20 @@ def _parse_model_line(line: str) -> GenerationEvent | None:
 async def _generate_demo(
     requirements: str,
     context: str,
-    images: list[UploadedImage],
+    references: str,
+    materials: list[UploadedMaterial],
+    material_context: str,
 ) -> AsyncIterator[GenerationEvent]:
-    image_names = "、".join(image.filename for image in images) or "未上传图片"
+    material_names = "、".join(item.filename for item in materials) or "未上传文件"
     requirement_hint = _compact(requirements, "未填写特定要求")
     context_hint = _compact(context, "未填写上下文")
+    reference_hint = _compact(references, "未填写外部链接")
+    parsed_count = sum(1 for item in materials if item.extracted_text)
 
     thoughts = [
-        f"已读取材料：{image_names}。",
+        f"已读取材料：{material_names}。",
+        f"可解析文件数量：{parsed_count}。",
+        f"外部文档/链接：{reference_hint}。",
         f"需求关注点：{requirement_hint}。",
         f"业务背景：{context_hint}。",
         "将按主流程、异常分支、边界、权限、数据、性能与易用性生成覆盖集。",

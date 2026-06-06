@@ -6,18 +6,34 @@ from typing import Any
 
 
 @dataclass
-class UploadedImage:
+class UploadedMaterial:
     filename: str
     content_type: str
     data: bytes
+    kind: str = "file"
+    extracted_text: str = ""
+    note: str = ""
 
     @property
     def size_kb(self) -> float:
         return round(len(self.data) / 1024, 1)
 
+    @property
+    def is_image(self) -> bool:
+        return self.content_type.startswith("image/")
+
     def as_data_url(self) -> str:
         encoded = base64.b64encode(self.data).decode("ascii")
         return f"data:{self.content_type};base64,{encoded}"
+
+    def describe(self) -> str:
+        text_state = "已抽取文本" if self.extracted_text else "无可抽取文本"
+        if self.note:
+            text_state = self.note
+        return f"{self.filename} ({self.kind}, {self.content_type}, {self.size_kb} KB, {text_state})"
+
+
+UploadedImage = UploadedMaterial
 
 
 @dataclass
