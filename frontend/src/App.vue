@@ -22,6 +22,10 @@
           <List aria-hidden="true" />
           流式日志
         </a>
+        <a class="nav-item" href="#apiRunnerTitle" @click="fetchApiRunHistory">
+          <PlayCircle aria-hidden="true" />
+          接口执行
+        </a>
         <a class="nav-item" href="#historyTitle" @click="refreshHistory">
           <History aria-hidden="true" />
           历史记录
@@ -76,6 +80,135 @@
         <div class="signal-card">
           <span>OUTPUT</span>
           <strong>Cases + XLSX</strong>
+        </div>
+        <div class="signal-card">
+          <span>EXECUTION</span>
+          <strong>API Test Run</strong>
+        </div>
+      </section>
+
+      <section class="panel api-runner-panel" aria-labelledby="apiRunnerTitle">
+        <div class="panel-heading result-heading">
+          <div>
+            <p class="eyebrow">Execution Node</p>
+            <h2 id="apiRunnerTitle">接口测试执行</h2>
+          </div>
+          <div class="result-actions">
+            <button class="icon-button" type="button" aria-label="刷新接口执行历史" title="刷新接口执行历史" :disabled="isApiHistoryLoading" @click="fetchApiRunHistory">
+              <RefreshCw aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <div class="api-runner-grid">
+          <div class="api-form-stack">
+            <div class="api-form-row">
+              <div class="field-group compact-field">
+                <label for="apiName">用例名称</label>
+                <input id="apiName" v-model="apiTest.name" class="text-input" type="text" placeholder="本地数据库状态检查" />
+              </div>
+              <div class="field-group method-field">
+                <label for="apiMethod">方法</label>
+                <select id="apiMethod" v-model="apiTest.method" class="select-input">
+                  <option v-for="method in apiMethods" :key="method" :value="method">{{ method }}</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field-group compact-field">
+              <label for="apiUrl">接口地址</label>
+              <input id="apiUrl" v-model="apiTest.url" class="text-input" type="url" placeholder="http://127.0.0.1:8000/api/database/status" />
+            </div>
+
+            <div class="api-form-row">
+              <div class="field-group compact-field">
+                <label for="apiExpectedStatus">期望状态码</label>
+                <input id="apiExpectedStatus" v-model="apiTest.expectedStatus" class="number-input" type="number" min="100" max="599" />
+              </div>
+              <div class="field-group compact-field">
+                <label for="apiExpectedContains">响应包含</label>
+                <input id="apiExpectedContains" v-model="apiTest.expectedContains" class="text-input" type="text" placeholder="connected" />
+              </div>
+              <div class="field-group compact-field">
+                <label for="apiTimeout">超时秒数</label>
+                <input id="apiTimeout" v-model.number="apiTest.timeoutSeconds" class="number-input" type="number" min="1" max="30" step="1" />
+              </div>
+            </div>
+
+            <div class="api-form-row">
+              <div class="field-group compact-field">
+                <label for="apiHeaders">Headers JSON</label>
+                <textarea id="apiHeaders" v-model="apiTest.headersText" rows="7" spellcheck="false"></textarea>
+              </div>
+              <div class="field-group compact-field">
+                <label for="apiBody">Body</label>
+                <textarea id="apiBody" v-model="apiTest.body" rows="7" spellcheck="false" placeholder="{ &quot;keyword&quot;: &quot;test&quot; }"></textarea>
+              </div>
+            </div>
+
+            <div class="composer-actions api-actions">
+              <button class="secondary-button" type="button" :disabled="isApiRunning" @click="resetApiTest">
+                <RefreshCw aria-hidden="true" />
+                重置
+              </button>
+              <button class="primary-button" type="button" :disabled="isApiRunning" @click="runApiTest">
+                <Send aria-hidden="true" />
+                {{ isApiRunning ? "执行中" : "执行接口" }}
+              </button>
+            </div>
+          </div>
+
+          <div class="api-result-stack">
+            <div class="api-result-card" :class="apiResultClass">
+              <div v-if="apiRunResult" class="api-result-content">
+                <div class="api-result-head">
+                  <span class="pill" :class="apiRunResult.passed ? 'run-pass' : 'run-fail'">
+                    <CheckCircle2 v-if="apiRunResult.passed" aria-hidden="true" />
+                    <AlertTriangle v-else aria-hidden="true" />
+                    {{ apiRunResult.passed ? "通过" : "未通过" }}
+                  </span>
+                  <span class="pill">{{ apiRunResult.response?.durationMs ?? 0 }} ms</span>
+                  <span class="pill">HTTP {{ apiRunResult.response?.statusCode ?? "-" }}</span>
+                </div>
+                <h3>{{ apiRunResult.name }}</h3>
+                <p>{{ apiRunResult.request?.method }} {{ apiRunResult.request?.url }}</p>
+
+                <div class="assertion-grid">
+                  <div v-for="assertion in apiRunResult.assertions || []" :key="assertion.name" class="assertion-card" :class="{ passed: assertion.passed }">
+                    <strong>{{ assertion.name }}</strong>
+                    <span>{{ assertion.message }}</span>
+                  </div>
+                </div>
+
+                <pre class="response-preview">{{ apiRunResult.response?.bodyPreview || apiRunResult.error || "无响应体" }}</pre>
+              </div>
+              <div v-else class="empty-state api-empty">
+                {{ isApiRunning ? "接口执行中" : "等待接口执行" }}
+              </div>
+            </div>
+
+            <div class="api-history-strip" aria-live="polite">
+              <div class="api-history-heading">
+                <span class="side-card-label">RUN HISTORY</span>
+                <strong>{{ apiRunHistory.length }} 次</strong>
+              </div>
+              <button
+                v-for="item in apiRunHistory"
+                :key="item.runId"
+                class="api-history-item"
+                :class="{ active: apiRunResult?.runId === item.runId }"
+                type="button"
+                @click="loadApiRun(item)"
+              >
+                <span class="pill" :class="item.passed ? 'run-pass' : 'run-fail'">{{ item.passed ? "PASS" : "FAIL" }}</span>
+                <strong>{{ item.name || `${item.request?.method || ""} ${item.request?.url || ""}` }}</strong>
+                <small>{{ formatDate(item.createdAt) }} · {{ item.response?.durationMs ?? 0 }} ms</small>
+              </button>
+              <div v-if="!apiRunHistory.length" class="api-history-empty">
+                {{ isApiHistoryLoading ? "正在读取接口执行历史" : "暂无接口执行历史" }}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -359,7 +492,9 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from "vue";
 import {
+  AlertTriangle,
   BarChart3,
+  CheckCircle2,
   Copy,
   Download,
   FileDown,
@@ -368,8 +503,10 @@ import {
   History,
   List,
   Moon,
+  PlayCircle,
   RefreshCw,
   Search,
+  Send,
   Trash2,
   Upload,
   X,
@@ -378,6 +515,7 @@ import {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const MAX_CLIENT_FILE_MB = 20;
+const apiMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const SUPPORTED_EXTENSIONS = new Set([
   "png",
   "jpg",
@@ -411,14 +549,19 @@ const selectedFiles = ref([]);
 const cases = ref([]);
 const logs = ref([]);
 const historyItems = ref([]);
+const apiRunHistory = ref([]);
 const downloadUrl = ref("");
 const activeView = ref("cards");
 const isGenerating = ref(false);
 const isDragging = ref(false);
 const isHistoryLoading = ref(false);
+const isApiRunning = ref(false);
+const isApiHistoryLoading = ref(false);
 const requirements = ref("");
 const context = ref("");
 const references = ref("");
+const apiTest = ref(createDefaultApiTest());
+const apiRunResult = ref(null);
 const statusText = ref("待生成");
 const progress = ref(0);
 const searchText = ref("");
@@ -449,10 +592,18 @@ const priorityMix = computed(() => {
     .join(" / ") || "-";
 });
 
+const apiResultClass = computed(() => {
+  if (!apiRunResult.value) {
+    return "";
+  }
+  return apiRunResult.value.passed ? "passed" : "failed";
+});
+
 onMounted(() => {
   document.body.classList.add("dark");
   fetchDatabaseStatus();
   fetchHistory();
+  fetchApiRunHistory();
 });
 
 function toggleTheme() {
@@ -721,6 +872,90 @@ function refreshHistory() {
   fetchHistory();
 }
 
+async function runApiTest() {
+  if (isApiRunning.value) {
+    return;
+  }
+  if (!apiTest.value.url.trim()) {
+    showToast("请填写接口地址。");
+    return;
+  }
+
+  let headers;
+  try {
+    headers = parseHeaders(apiTest.value.headersText);
+  } catch (error) {
+    showToast(error.message || "Headers JSON 格式不正确");
+    return;
+  }
+
+  isApiRunning.value = true;
+  apiRunResult.value = null;
+  try {
+    const response = await fetch(apiUrl("/api/api-tests/run"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: apiTest.value.name.trim(),
+        method: apiTest.value.method,
+        url: apiTest.value.url.trim(),
+        headers,
+        body: apiTest.value.body,
+        expectedStatus: normalizeExpectedStatus(apiTest.value.expectedStatus),
+        expectedContains: apiTest.value.expectedContains.trim(),
+        timeoutSeconds: Number(apiTest.value.timeoutSeconds) || 10,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+
+    const data = await response.json();
+    apiRunResult.value = data;
+    showToast(data.passed ? "接口测试执行通过。" : "接口测试执行未通过。");
+    fetchApiRunHistory();
+  } catch (error) {
+    showToast(error.message || "接口执行失败");
+  } finally {
+    isApiRunning.value = false;
+  }
+}
+
+async function fetchApiRunHistory() {
+  isApiHistoryLoading.value = true;
+  try {
+    const response = await fetch(apiUrl("/api/api-tests/history?limit=20"));
+    const data = await response.json();
+    apiRunHistory.value = data.items || [];
+  } catch (error) {
+    apiRunHistory.value = [];
+  } finally {
+    isApiHistoryLoading.value = false;
+  }
+}
+
+function loadApiRun(item) {
+  apiRunResult.value = item;
+  apiTest.value = {
+    name: item.name || "",
+    method: item.request?.method || "GET",
+    url: item.request?.url || "",
+    headersText: JSON.stringify(item.request?.headers || {}, null, 2),
+    body: item.request?.body || "",
+    expectedStatus: item.expected?.status ?? "",
+    expectedContains: item.expected?.contains || "",
+    timeoutSeconds: 10,
+  };
+}
+
+function resetApiTest() {
+  apiTest.value = createDefaultApiTest();
+  apiRunResult.value = null;
+}
+
 async function loadHistoryDetail(sessionId) {
   try {
     const response = await fetch(apiUrl(`/api/history/${encodeURIComponent(sessionId)}`));
@@ -758,6 +993,49 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => {
     toastMessage.value = "";
   }, 2600);
+}
+
+function createDefaultApiTest() {
+  const baseUrl = API_BASE_URL || "http://127.0.0.1:8000";
+  return {
+    name: "本地数据库状态检查",
+    method: "GET",
+    url: `${baseUrl}/api/database/status`,
+    headersText: '{\n  "Accept": "application/json"\n}',
+    body: "",
+    expectedStatus: 200,
+    expectedContains: "connected",
+    timeoutSeconds: 10,
+  };
+}
+
+function parseHeaders(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return {};
+  }
+  const parsed = JSON.parse(text);
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+    throw new Error("Headers 必须是 JSON 对象。");
+  }
+  return parsed;
+}
+
+function normalizeExpectedStatus(value) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+  return Number(value);
+}
+
+async function readErrorMessage(response) {
+  const text = await response.text();
+  try {
+    const data = JSON.parse(text);
+    return data.detail || text || "接口执行请求失败";
+  } catch {
+    return text || "接口执行请求失败";
+  }
 }
 
 function isSupportedFile(file) {

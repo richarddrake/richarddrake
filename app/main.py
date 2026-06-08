@@ -5,18 +5,22 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas import UploadedMaterial, normalize_case
+from app.services.api_runner import run_api_test
 from app.services.database import (
     get_database_status,
     get_history_detail,
     init_database,
+    list_api_test_runs,
     list_history,
+    record_api_test_run,
     record_generation_session,
 )
 from app.services.excel_exporter import save_cases_to_excel
@@ -26,6 +30,20 @@ from app.services.material_parser import build_material_context, read_upload_mat
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 GENERATED_DIR = BASE_DIR / "generated"
+
+
+class ApiTestRunRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(default="", max_length=255)
+    method: str = Field(default="GET", max_length=16)
+    url: str = Field(..., min_length=1)
+    headers: dict[str, Any] = Field(default_factory=dict)
+    body: str = ""
+    expected_status: int | None = Field(default=200, alias="expectedStatus")
+    expected_contains: str = Field(default="", alias="expectedContains")
+    timeout_seconds: float = Field(default=10, alias="timeoutSeconds")
+
 
 app = FastAPI(title="测试用例智能生成系统", version="1.0.0")
 app.add_middleware(
@@ -70,6 +88,23 @@ async def history_detail(session_id: str) -> dict:
     if not detail:
         raise HTTPException(status_code=404, detail="历史记录不存在，或 MySQL 暂不可用。")
     return detail
+
+
+@app.post("/api/api-tests/run")
+async def run_api_test_case(request: ApiTestRunRequest) -> dict:
+    try:
+        result = await run_api_test(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    history_status = await asyncio.to_thread(record_api_test_run, result)
+    result["historyStatus"] = history_status
+    return result
+
+
+@app.get("/api/api-tests/history")
+async def api_test_history(limit: int = Query(default=20, ge=1, le=100)) -> dict:
+    return list_api_test_runs(limit=limit)
 
 
 @app.post("/api/generate")

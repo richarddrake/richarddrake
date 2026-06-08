@@ -1,6 +1,6 @@
 # 测试用例智能生成系统
 
-一个前后端分离的 AI 测试用例生成系统。用户可以上传思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、文本材料，也可以补充飞书文档/知识库/PRD 链接、用户要求和业务上下文。系统通过多模态大模型或本地演示生成器流式生成结构化测试用例，并自动保存为 Excel 文件供下载。
+一个前后端分离的 AI 测试用例生成系统。用户可以上传思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、文本材料，也可以补充飞书文档/知识库/PRD 链接、用户要求和业务上下文。系统通过多模态大模型或本地演示生成器流式生成结构化测试用例，并自动保存为 Excel 文件供下载；同时支持最小可用的接口测试用例执行与执行历史保存。
 
 ## 当前架构
 
@@ -28,6 +28,8 @@ scripts/                   Windows 启动和端口释放脚本
 - 测试用例卡片视图、表格视图、搜索过滤
 - 自动保存 Excel 并提供下载
 - 支持 MySQL 保存生成历史和用例明细
+- 支持接口测试用例执行：方法、URL、Headers、Body、状态码断言、响应内容断言和超时控制
+- 支持 MySQL 保存接口测试执行历史、响应摘要、断言结果和耗时
 - 支持 OpenAI-compatible 多模态接口
 - 未配置模型 Key 时提供本地演示生成器，便于验证完整流程
 
@@ -171,6 +173,33 @@ http://127.0.0.1:8000/api/database/status
 ```
 
 详细配置步骤见：[docs/MYSQL_SETUP.md](docs/MYSQL_SETUP.md)
+
+## 接口测试执行
+
+前端“接口执行”面板提供一个默认的本地健康检查用例：
+
+```text
+GET http://127.0.0.1:8000/api/database/status
+```
+
+你可以修改以下字段执行自己的接口测试：
+
+- 方法：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS
+- 接口地址：完整的 `http://` 或 `https://` URL
+- Headers JSON：例如 `{ "Authorization": "Bearer token" }`
+- Body：POST、PUT、PATCH 等请求体
+- 期望状态码：例如 `200`
+- 响应包含：用于检查响应体里是否包含指定文本
+- 超时秒数：1-30 秒
+
+后端接口：
+
+```text
+POST /api/api-tests/run
+GET  /api/api-tests/history?limit=20
+```
+
+执行结果会返回通过状态、实际状态码、耗时、响应预览、断言明细；如果 MySQL 已启用，会自动写入 `api_test_runs` 表。
 
 ## 输入材料
 

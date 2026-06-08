@@ -83,6 +83,28 @@ class StoredTestCase(Base):
     session = relationship("GenerationSession", back_populates="cases")
 
 
+class ApiTestRun(Base):
+    __tablename__ = "api_test_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String(80), unique=True, index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    name = Column(String(255), nullable=False, default="")
+    method = Column(String(16), nullable=False, default="GET")
+    url = Column(JsonText, nullable=False, default="")
+    request_headers_json = Column(JsonText, nullable=False, default="{}")
+    request_body = Column(JsonText, nullable=False, default="")
+    expected_status = Column(Integer, nullable=True)
+    expected_contains = Column(JsonText, nullable=False, default="")
+    actual_status = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=False, default=0)
+    passed = Column(Integer, nullable=False, default=0)
+    error = Column(JsonText, nullable=False, default="")
+    response_headers_json = Column(JsonText, nullable=False, default="{}")
+    response_body_preview = Column(JsonText, nullable=False, default="")
+    assertions_json = Column(JsonText, nullable=False, default="[]")
+
+
 def init_database() -> bool:
     global _engine, _SessionLocal, _last_error
     if not is_database_enabled():
@@ -262,6 +284,66 @@ def get_history_detail(session_id: str) -> dict[str, Any] | None:
         return None
 
 
+def record_api_test_run(result: dict[str, Any]) -> str:
+    if not is_database_enabled():
+        return "disabled"
+    if not init_database():
+        return "unavailable"
+
+    request = result.get("request") or {}
+    expected = result.get("expected") or {}
+    response = result.get("response") or {}
+
+    try:
+        with _SessionLocal() as db:
+            db.add(
+                ApiTestRun(
+                    run_id=str(result.get("runId") or ""),
+                    created_at=_parse_iso_datetime(str(result.get("createdAt") or "")) or datetime.utcnow(),
+                    name=str(result.get("name") or ""),
+                    method=str(request.get("method") or ""),
+                    url=str(request.get("url") or ""),
+                    request_headers_json=_json_dumps(request.get("headers") or {}),
+                    request_body=str(request.get("body") or ""),
+                    expected_status=_optional_int(expected.get("status")),
+                    expected_contains=str(expected.get("contains") or ""),
+                    actual_status=_optional_int(response.get("statusCode")),
+                    duration_ms=_optional_int(response.get("durationMs")) or 0,
+                    passed=1 if result.get("passed") else 0,
+                    error=str(result.get("error") or ""),
+                    response_headers_json=_json_dumps(response.get("headers") or {}),
+                    response_body_preview=str(response.get("bodyPreview") or ""),
+                    assertions_json=_json_dumps(result.get("assertions") or []),
+                )
+            )
+            db.commit()
+        return "saved"
+    except SQLAlchemyError as exc:
+        global _last_error
+        _last_error = str(exc)
+        return "failed"
+
+
+def list_api_test_runs(limit: int = 20) -> dict[str, Any]:
+    if not is_database_enabled():
+        return {"enabled": False, "connected": False, "message": "MySQL 未启用。", "items": []}
+    if not init_database():
+        return {"enabled": True, "connected": False, "message": _last_error, "items": []}
+
+    safe_limit = max(1, min(limit, 100))
+    try:
+        with _SessionLocal() as db:
+            runs = db.query(ApiTestRun).order_by(ApiTestRun.created_at.desc()).limit(safe_limit).all()
+            return {
+                "enabled": True,
+                "connected": True,
+                "message": "ok",
+                "items": [_api_run_to_dict(item) for item in runs],
+            }
+    except SQLAlchemyError as exc:
+        return {"enabled": True, "connected": False, "message": str(exc), "items": []}
+
+
 def is_database_enabled() -> bool:
     return os.getenv("DATABASE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -332,6 +414,33 @@ def _case_to_dict(case: StoredTestCase) -> dict[str, Any]:
     }
 
 
+def _api_run_to_dict(run: ApiTestRun) -> dict[str, Any]:
+    return {
+        "runId": run.run_id,
+        "createdAt": run.created_at.isoformat() + "Z" if run.created_at else "",
+        "name": run.name,
+        "request": {
+            "method": run.method,
+            "url": run.url,
+            "headers": _load_json(run.request_headers_json, {}),
+            "body": run.request_body,
+        },
+        "expected": {
+            "status": run.expected_status,
+            "contains": run.expected_contains,
+        },
+        "response": {
+            "statusCode": run.actual_status,
+            "durationMs": run.duration_ms,
+            "headers": _load_json(run.response_headers_json, {}),
+            "bodyPreview": run.response_body_preview,
+        },
+        "assertions": _load_json(run.assertions_json, []),
+        "passed": bool(run.passed),
+        "error": run.error,
+    }
+
+
 def _build_summary(
     requirements: str,
     context: str,
@@ -372,3 +481,21 @@ def _load_json(value: str, fallback: Any) -> Any:
         return json.loads(value or "")
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.removesuffix("Z"))
+    except ValueError:
+        return None
