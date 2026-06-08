@@ -1,6 +1,6 @@
 # 测试用例智能生成系统
 
-一个前后端分离的 AI 测试用例生成系统。用户可以上传思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、文本材料，也可以补充飞书文档/知识库/PRD 链接、用户要求和业务上下文。系统通过多模态大模型或本地演示生成器流式生成结构化测试用例，并自动保存为 Excel 文件供下载；同时支持最小可用的接口测试用例执行与执行历史保存。
+一个前后端分离的 AI 测试用例生成系统。用户可以上传思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、文本材料，也可以补充飞书文档/知识库/PRD 链接、用户要求和业务上下文。系统通过多模态大模型或本地演示生成器流式生成结构化测试用例，并自动保存为 Excel 文件供下载；同时支持接口测试执行、接口用例集串联、增强断言、数据库校验、并发执行和执行历史保存。
 
 ## 当前架构
 
@@ -28,8 +28,12 @@ scripts/                   Windows 启动和端口释放脚本
 - 测试用例卡片视图、表格视图、搜索过滤
 - 自动保存 Excel 并提供下载
 - 支持 MySQL 保存生成历史和用例明细
-- 支持接口测试用例执行：方法、URL、Headers、Body、状态码断言、响应内容断言和超时控制
-- 支持 MySQL 保存接口测试执行历史、响应摘要、断言结果和耗时
+- 支持接口测试用例执行：方法、URL、Headers、Body、Form、Multipart、状态码断言、响应内容断言和超时控制
+- 支持增强断言：JSONPath、Header、Body、状态码、响应时间、类型、正则、存在性、大小比较和 JSON Schema
+- 支持环境变量、`{{variable}}` 变量替换、响应提取和多接口串联
+- 支持 MySQL 只读 SELECT 校验，用于验证接口执行后的数据落库和数据一致性
+- 支持接口用例集批量顺序执行、失败中断、并发执行和基础性能指标
+- 支持 MySQL 保存接口测试执行历史、响应摘要、断言结果、变量提取结果和耗时
 - 支持 OpenAI-compatible 多模态接口
 - 未配置模型 Key 时提供本地演示生成器，便于验证完整流程
 
@@ -187,19 +191,30 @@ GET http://127.0.0.1:8000/api/database/status
 - 方法：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS
 - 接口地址：完整的 `http://` 或 `https://` URL
 - Headers JSON：例如 `{ "Authorization": "Bearer token" }`
-- Body：POST、PUT、PATCH 等请求体
+- Body：POST、PUT、PATCH 等请求体，支持 raw / json / form / multipart
 - 期望状态码：例如 `200`
 - 响应包含：用于检查响应体里是否包含指定文本
+- 最大耗时：用于响应时间断言
 - 超时秒数：1-30 秒
+- 环境变量 JSON：支持 `{{base_url}}`、`{{token}}` 这样的变量替换
+- 字段断言 JSON：支持 JSONPath、Header、Body、状态码、响应时间等断言
+- 变量提取 JSON：支持从响应 JSON、Header、Body 正则提取变量给后续步骤使用
+- 数据库校验 JSON：只允许 SELECT，用于执行接口后校验 MySQL 数据
+- JSON Schema：用于校验响应结构
+- 用例集步骤 JSON：用于多接口串联和批量执行
 
 后端接口：
 
 ```text
 POST /api/api-tests/run
+POST /api/api-tests/suite
+POST /api/api-tests/load
 GET  /api/api-tests/history?limit=20
 ```
 
-执行结果会返回通过状态、实际状态码、耗时、响应预览、断言明细；如果 MySQL 已启用，会自动写入 `api_test_runs` 表。
+执行结果会返回通过状态、实际状态码、耗时、响应预览、断言明细、变量提取结果、数据库校验结果和并发指标；如果 MySQL 已启用，会自动写入 `api_test_runs` 表。
+
+详细配置示例见：[docs/API_TEST_EXECUTION.md](docs/API_TEST_EXECUTION.md)
 
 ## 输入材料
 

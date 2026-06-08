@@ -153,6 +153,35 @@ def get_database_status() -> dict[str, Any]:
         return {"enabled": True, "connected": False, "message": str(exc)}
 
 
+def run_readonly_query(sql: str, limit: int = 100) -> dict[str, Any]:
+    if not is_database_enabled():
+        return {"ok": False, "message": "MySQL 未启用。", "columns": [], "rows": [], "rowCount": 0}
+    if not init_database():
+        return {"ok": False, "message": _last_error or "MySQL 暂不可用。", "columns": [], "rows": [], "rowCount": 0}
+
+    query = (sql or "").strip()
+    safe_limit = max(1, min(limit, 500))
+    if query.endswith(";"):
+        query = query[:-1].strip()
+    if not _is_safe_select_query(query):
+        return {"ok": False, "message": "数据库校验只允许执行单条 SELECT 查询。", "columns": [], "rows": [], "rowCount": 0}
+
+    wrapped_query = f"SELECT * FROM ({query}) AS api_test_query LIMIT {safe_limit}"
+    try:
+        with _engine.connect() as connection:
+            result = connection.execute(text(wrapped_query))
+            rows = [dict(row) for row in result.mappings().fetchmany(safe_limit)]
+            return {
+                "ok": True,
+                "message": "ok",
+                "columns": list(result.keys()),
+                "rows": rows,
+                "rowCount": len(rows),
+            }
+    except SQLAlchemyError as exc:
+        return {"ok": False, "message": str(exc), "columns": [], "rows": [], "rowCount": 0}
+
+
 def record_generation_session(
     *,
     session_id: str,
@@ -415,10 +444,13 @@ def _case_to_dict(case: StoredTestCase) -> dict[str, Any]:
 
 
 def _api_run_to_dict(run: ApiTestRun) -> dict[str, Any]:
+    run_type = {"SUITE": "suite", "LOAD": "load"}.get((run.method or "").upper(), "single")
+    assertions = _load_json(run.assertions_json, [])
     return {
         "runId": run.run_id,
         "createdAt": run.created_at.isoformat() + "Z" if run.created_at else "",
         "name": run.name,
+        "runType": run_type,
         "request": {
             "method": run.method,
             "url": run.url,
@@ -435,7 +467,12 @@ def _api_run_to_dict(run: ApiTestRun) -> dict[str, Any]:
             "headers": _load_json(run.response_headers_json, {}),
             "bodyPreview": run.response_body_preview,
         },
-        "assertions": _load_json(run.assertions_json, []),
+        "assertions": assertions,
+        "summary": {
+            "assertionCount": len(assertions),
+            "passedAssertions": sum(1 for item in assertions if item.get("passed")),
+            "failedAssertions": sum(1 for item in assertions if not item.get("passed")),
+        },
         "passed": bool(run.passed),
         "error": run.error,
     }
@@ -481,6 +518,40 @@ def _load_json(value: str, fallback: Any) -> Any:
         return json.loads(value or "")
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _is_safe_select_query(sql: str) -> bool:
+    if not sql:
+        return False
+    lowered = sql.lower().strip()
+    if lowered.endswith(";"):
+        lowered = lowered[:-1].strip()
+        sql = sql[:-1].strip()
+    if ";" in lowered or not lowered.startswith("select "):
+        return False
+    forbidden = {
+        "insert",
+        "update",
+        "delete",
+        "drop",
+        "alter",
+        "truncate",
+        "create",
+        "replace",
+        "grant",
+        "revoke",
+        "call",
+        "exec",
+        "execute",
+        "load_file",
+        "outfile",
+    }
+    tokens = {item for item in re_split_words(lowered)}
+    return not (tokens & forbidden)
+
+
+def re_split_words(value: str) -> list[str]:
+    return [item for item in value.replace("(", " ").replace(")", " ").replace(",", " ").split() if item]
 
 
 def _optional_int(value: Any) -> int | None:

@@ -1201,6 +1201,10 @@ td {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.api-form-row.api-execution-row {
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+}
+
 .compact-field {
   margin-top: 0;
 }
@@ -1211,6 +1215,7 @@ td {
 
 .api-actions {
   margin-top: 2px;
+  flex-wrap: wrap;
 }
 
 .api-result-stack {
@@ -1273,6 +1278,36 @@ td {
   overflow-wrap: anywhere;
 }
 
+.api-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.api-summary-grid div {
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(30, 211, 255, 0.08), transparent 60%),
+    color-mix(in srgb, var(--surface-soft), transparent 8%);
+}
+
+.api-summary-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.api-summary-grid strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--cyan);
+  font-size: 18px;
+}
+
 .run-pass {
   color: #071016;
   border-color: transparent;
@@ -1313,6 +1348,36 @@ td {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.api-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.api-detail-card {
+  display: grid;
+  gap: 6px;
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--amber), transparent 44%);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-soft), transparent 8%);
+}
+
+.api-detail-card.passed {
+  border-color: color-mix(in srgb, var(--teal), transparent 44%);
+}
+
+.api-detail-card strong {
+  font-size: 13px;
+}
+
+.api-detail-card span {
+  color: var(--muted);
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -1405,6 +1470,48 @@ td {
   border: 1px dashed color-mix(in srgb, var(--cyan), transparent 50%);
   border-radius: var(--radius);
   font-size: 13px;
+}
+
+.advanced-config {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-strong), transparent 6%);
+}
+
+.advanced-config summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.advanced-config summary::marker {
+  color: var(--cyan);
+}
+
+.advanced-config summary span:last-child {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--cyan), transparent 54%);
+  border-radius: 8px;
+  color: var(--cyan);
+  font-size: 12px;
+}
+
+.advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
 }
 
 @media (max-width: 1180px) {
@@ -1515,7 +1622,10 @@ td {
 
   .api-form-row,
   .api-form-row:nth-of-type(3),
-  .api-form-row:nth-of-type(4) {
+  .api-form-row:nth-of-type(4),
+  .api-execution-row,
+  .advanced-grid,
+  .api-summary-grid {
     grid-template-columns: 1fr;
   }
 

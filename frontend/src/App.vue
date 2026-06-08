@@ -135,6 +135,30 @@
               </div>
             </div>
 
+            <div class="api-form-row api-execution-row">
+              <div class="field-group compact-field">
+                <label for="apiBodyMode">Body 模式</label>
+                <select id="apiBodyMode" v-model="apiTest.bodyMode" class="select-input">
+                  <option value="raw">raw</option>
+                  <option value="json">json</option>
+                  <option value="form">form</option>
+                  <option value="multipart">multipart</option>
+                </select>
+              </div>
+              <div class="field-group compact-field">
+                <label for="apiMaxResponseMs">最大耗时 ms</label>
+                <input id="apiMaxResponseMs" v-model="apiTest.maxResponseMs" class="number-input" type="number" min="1" placeholder="1000" />
+              </div>
+              <div class="field-group compact-field">
+                <label for="apiRepeat">并发次数</label>
+                <input id="apiRepeat" v-model.number="apiTest.repeat" class="number-input" type="number" min="1" max="100" />
+              </div>
+              <div class="field-group compact-field">
+                <label for="apiConcurrency">并发数</label>
+                <input id="apiConcurrency" v-model.number="apiTest.concurrency" class="number-input" type="number" min="1" max="20" />
+              </div>
+            </div>
+
             <div class="api-form-row">
               <div class="field-group compact-field">
                 <label for="apiHeaders">Headers JSON</label>
@@ -146,10 +170,51 @@
               </div>
             </div>
 
+            <details class="advanced-config" open>
+              <summary>
+                <span>高级接口测试配置</span>
+                <span>{{ advancedConfigCount }} 项</span>
+              </summary>
+              <div class="advanced-grid">
+                <div class="field-group compact-field">
+                  <label for="apiVariables">环境变量 JSON</label>
+                  <textarea id="apiVariables" v-model="apiTest.variablesText" rows="7" spellcheck="false"></textarea>
+                </div>
+                <div class="field-group compact-field">
+                  <label for="apiAssertions">字段断言 JSON</label>
+                  <textarea id="apiAssertions" v-model="apiTest.assertionsText" rows="7" spellcheck="false"></textarea>
+                </div>
+                <div class="field-group compact-field">
+                  <label for="apiExtractors">变量提取 JSON</label>
+                  <textarea id="apiExtractors" v-model="apiTest.extractorsText" rows="7" spellcheck="false"></textarea>
+                </div>
+                <div class="field-group compact-field">
+                  <label for="apiDbAssertions">数据库校验 JSON</label>
+                  <textarea id="apiDbAssertions" v-model="apiTest.databaseAssertionsText" rows="7" spellcheck="false"></textarea>
+                </div>
+                <div class="field-group compact-field">
+                  <label for="apiSchema">JSON Schema</label>
+                  <textarea id="apiSchema" v-model="apiTest.jsonSchemaText" rows="7" spellcheck="false"></textarea>
+                </div>
+                <div class="field-group compact-field">
+                  <label for="apiSuiteSteps">用例集步骤 JSON</label>
+                  <textarea id="apiSuiteSteps" v-model="apiTest.suiteStepsText" rows="7" spellcheck="false"></textarea>
+                </div>
+              </div>
+            </details>
+
             <div class="composer-actions api-actions">
               <button class="secondary-button" type="button" :disabled="isApiRunning" @click="resetApiTest">
                 <RefreshCw aria-hidden="true" />
                 重置
+              </button>
+              <button class="secondary-button" type="button" :disabled="isApiRunning" @click="runApiSuite">
+                <ListChecks aria-hidden="true" />
+                执行用例集
+              </button>
+              <button class="secondary-button" type="button" :disabled="isApiRunning" @click="runApiLoad">
+                <Gauge aria-hidden="true" />
+                并发执行
               </button>
               <button class="primary-button" type="button" :disabled="isApiRunning" @click="runApiTest">
                 <Send aria-hidden="true" />
@@ -169,14 +234,37 @@
                   </span>
                   <span class="pill">{{ apiRunResult.response?.durationMs ?? 0 }} ms</span>
                   <span class="pill">HTTP {{ apiRunResult.response?.statusCode ?? "-" }}</span>
+                  <span class="pill">{{ runTypeLabel(apiRunResult.runType) }}</span>
                 </div>
                 <h3>{{ apiRunResult.name }}</h3>
                 <p>{{ apiRunResult.request?.method }} {{ apiRunResult.request?.url }}</p>
+
+                <div class="api-summary-grid">
+                  <div>
+                    <span>断言</span>
+                    <strong>{{ apiRunResult.summary?.passedAssertions ?? passedAssertionCount(apiRunResult) }}/{{ apiRunResult.summary?.assertionCount ?? (apiRunResult.assertions || []).length }}</strong>
+                  </div>
+                  <div>
+                    <span>提取变量</span>
+                    <strong>{{ Object.keys(apiRunResult.variables || {}).length }}</strong>
+                  </div>
+                  <div>
+                    <span>数据库校验</span>
+                    <strong>{{ (apiRunResult.databaseChecks || []).length }}</strong>
+                  </div>
+                </div>
 
                 <div class="assertion-grid">
                   <div v-for="assertion in apiRunResult.assertions || []" :key="assertion.name" class="assertion-card" :class="{ passed: assertion.passed }">
                     <strong>{{ assertion.name }}</strong>
                     <span>{{ assertion.message }}</span>
+                  </div>
+                </div>
+
+                <div v-if="(apiRunResult.extractions || []).length" class="api-detail-grid">
+                  <div v-for="item in apiRunResult.extractions" :key="item.name" class="api-detail-card" :class="{ passed: item.passed }">
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ stringifyValue(item.value || item.message) }}</span>
                   </div>
                 </div>
 
@@ -499,9 +587,11 @@ import {
   Download,
   FileDown,
   FileText,
+  Gauge,
   Database,
   History,
   List,
+  ListChecks,
   Moon,
   PlayCircle,
   RefreshCw,
@@ -597,6 +687,18 @@ const apiResultClass = computed(() => {
     return "";
   }
   return apiRunResult.value.passed ? "passed" : "failed";
+});
+
+const advancedConfigCount = computed(() => {
+  const fields = [
+    apiTest.value.variablesText,
+    apiTest.value.assertionsText,
+    apiTest.value.extractorsText,
+    apiTest.value.databaseAssertionsText,
+    apiTest.value.jsonSchemaText,
+    apiTest.value.suiteStepsText,
+  ];
+  return fields.filter((value) => String(value || "").trim() && String(value || "").trim() !== "[]" && String(value || "").trim() !== "{}").length;
 });
 
 onMounted(() => {
@@ -881,11 +983,11 @@ async function runApiTest() {
     return;
   }
 
-  let headers;
+  let payload;
   try {
-    headers = parseHeaders(apiTest.value.headersText);
+    payload = buildApiPayload();
   } catch (error) {
-    showToast(error.message || "Headers JSON 格式不正确");
+    showToast(error.message || "接口配置格式不正确");
     return;
   }
 
@@ -897,16 +999,7 @@ async function runApiTest() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        name: apiTest.value.name.trim(),
-        method: apiTest.value.method,
-        url: apiTest.value.url.trim(),
-        headers,
-        body: apiTest.value.body,
-        expectedStatus: normalizeExpectedStatus(apiTest.value.expectedStatus),
-        expectedContains: apiTest.value.expectedContains.trim(),
-        timeoutSeconds: Number(apiTest.value.timeoutSeconds) || 10,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -919,6 +1012,95 @@ async function runApiTest() {
     fetchApiRunHistory();
   } catch (error) {
     showToast(error.message || "接口执行失败");
+  } finally {
+    isApiRunning.value = false;
+  }
+}
+
+async function runApiSuite() {
+  if (isApiRunning.value) {
+    return;
+  }
+
+  let steps;
+  let variables;
+  try {
+    steps = parseJsonText(apiTest.value.suiteStepsText, [], "用例集步骤 JSON");
+    variables = parseJsonText(apiTest.value.variablesText, {}, "环境变量 JSON");
+  } catch (error) {
+    showToast(error.message || "用例集配置格式不正确");
+    return;
+  }
+  if (!Array.isArray(steps) || !steps.length) {
+    showToast("请在用例集步骤 JSON 中至少配置 1 个步骤。");
+    return;
+  }
+
+  isApiRunning.value = true;
+  apiRunResult.value = null;
+  try {
+    const response = await fetch(apiUrl("/api/api-tests/suite"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: `${apiTest.value.name || "接口"}用例集`,
+        variables,
+        steps,
+        stopOnFailure: true,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+    const data = await response.json();
+    apiRunResult.value = data;
+    showToast(data.passed ? "接口用例集执行通过。" : "接口用例集存在失败。");
+    fetchApiRunHistory();
+  } catch (error) {
+    showToast(error.message || "接口用例集执行失败");
+  } finally {
+    isApiRunning.value = false;
+  }
+}
+
+async function runApiLoad() {
+  if (isApiRunning.value) {
+    return;
+  }
+
+  let payload;
+  try {
+    payload = buildApiPayload();
+  } catch (error) {
+    showToast(error.message || "并发配置格式不正确");
+    return;
+  }
+
+  isApiRunning.value = true;
+  apiRunResult.value = null;
+  try {
+    const response = await fetch(apiUrl("/api/api-tests/load"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...payload,
+        repeat: Number(apiTest.value.repeat) || 10,
+        concurrency: Number(apiTest.value.concurrency) || 3,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+    const data = await response.json();
+    apiRunResult.value = data;
+    showToast(data.passed ? "并发执行全部通过。" : "并发执行存在失败。");
+    fetchApiRunHistory();
+  } catch (error) {
+    showToast(error.message || "并发执行失败");
   } finally {
     isApiRunning.value = false;
   }
@@ -940,13 +1122,16 @@ async function fetchApiRunHistory() {
 function loadApiRun(item) {
   apiRunResult.value = item;
   apiTest.value = {
+    ...createDefaultApiTest(),
     name: item.name || "",
     method: item.request?.method || "GET",
     url: item.request?.url || "",
     headersText: JSON.stringify(item.request?.headers || {}, null, 2),
     body: item.request?.body || "",
+    bodyMode: item.request?.bodyMode || "raw",
     expectedStatus: item.expected?.status ?? "",
     expectedContains: item.expected?.contains || "",
+    maxResponseMs: item.expected?.maxResponseMs ?? "",
     timeoutSeconds: 10,
   };
 }
@@ -1003,9 +1188,44 @@ function createDefaultApiTest() {
     url: `${baseUrl}/api/database/status`,
     headersText: '{\n  "Accept": "application/json"\n}',
     body: "",
+    bodyMode: "raw",
     expectedStatus: 200,
     expectedContains: "connected",
+    maxResponseMs: 1000,
     timeoutSeconds: 10,
+    repeat: 10,
+    concurrency: 3,
+    variablesText: `{\n  "base_url": "${baseUrl}"\n}`,
+    assertionsText: '[\n  {\n    "name": "connected 字段为 true",\n    "source": "json",\n    "path": "$.connected",\n    "operator": "equals",\n    "expected": true\n  },\n  {\n    "name": "消息字段存在",\n    "source": "json",\n    "path": "$.message",\n    "operator": "exists"\n  }\n]',
+    extractorsText: '[\n  {\n    "name": "db_status_message",\n    "source": "json",\n    "path": "$.message"\n  }\n]',
+    databaseAssertionsText: '[\n  {\n    "name": "历史生成记录表可查询",\n    "sql": "SELECT COUNT(*) AS total FROM generation_sessions",\n    "operator": "gte",\n    "expected": 0\n  }\n]',
+    jsonSchemaText: '{\n  "type": "object",\n  "required": ["enabled", "connected", "message"],\n  "properties": {\n    "enabled": { "type": "boolean" },\n    "connected": { "type": "boolean" },\n    "message": { "type": "string" }\n  }\n}',
+    suiteStepsText: `[\n  {\n    "name": "数据库状态检查",\n    "method": "GET",\n    "url": "{{base_url}}/api/database/status",\n    "headers": { "Accept": "application/json" },\n    "expectedStatus": 200,\n    "assertions": [\n      { "name": "MySQL 已连接", "source": "json", "path": "$.connected", "operator": "equals", "expected": true }\n    ],\n    "extractors": [\n      { "name": "db_message", "source": "json", "path": "$.message" }\n    ]\n  },\n  {\n    "name": "历史记录接口检查",\n    "method": "GET",\n    "url": "{{base_url}}/api/history?limit=1",\n    "headers": { "Accept": "application/json" },\n    "expectedStatus": 200,\n    "assertions": [\n      { "name": "items 字段存在", "source": "json", "path": "$.items", "operator": "exists" }\n    ]\n  }\n]`,
+  };
+}
+
+function buildApiPayload() {
+  const variables = parseJsonText(apiTest.value.variablesText, {}, "环境变量 JSON");
+  const assertions = parseJsonText(apiTest.value.assertionsText, [], "字段断言 JSON");
+  const extractors = parseJsonText(apiTest.value.extractorsText, [], "变量提取 JSON");
+  const databaseAssertions = parseJsonText(apiTest.value.databaseAssertionsText, [], "数据库校验 JSON");
+  const jsonSchema = parseJsonText(apiTest.value.jsonSchemaText, null, "JSON Schema");
+  return {
+    name: apiTest.value.name.trim(),
+    method: apiTest.value.method,
+    url: apiTest.value.url.trim(),
+    headers: parseHeaders(apiTest.value.headersText),
+    body: apiTest.value.body,
+    bodyMode: apiTest.value.bodyMode,
+    expectedStatus: normalizeExpectedStatus(apiTest.value.expectedStatus),
+    expectedContains: apiTest.value.expectedContains.trim(),
+    maxResponseMs: normalizeOptionalNumber(apiTest.value.maxResponseMs),
+    timeoutSeconds: Number(apiTest.value.timeoutSeconds) || 10,
+    variables,
+    assertions: ensureArray(assertions, "字段断言 JSON"),
+    extractors: ensureArray(extractors, "变量提取 JSON"),
+    databaseAssertions: ensureArray(databaseAssertions, "数据库校验 JSON"),
+    jsonSchema,
   };
 }
 
@@ -1021,11 +1241,61 @@ function parseHeaders(value) {
   return parsed;
 }
 
+function parseJsonText(value, fallback, label) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${label} 格式不正确：${error.message}`);
+  }
+}
+
+function ensureArray(value, label) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} 必须是数组。`);
+  }
+  return value;
+}
+
 function normalizeExpectedStatus(value) {
   if (value === "" || value === null || value === undefined) {
     return null;
   }
   return Number(value);
+}
+
+function normalizeOptionalNumber(value) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+  return Number(value);
+}
+
+function runTypeLabel(value) {
+  const labels = {
+    single: "单接口",
+    suite: "用例集",
+    load: "并发",
+  };
+  return labels[value] || "单接口";
+}
+
+function passedAssertionCount(result) {
+  return (result?.assertions || []).filter((item) => item.passed).length;
+}
+
+function stringifyValue(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value ?? "");
+  }
 }
 
 async function readErrorMessage(response) {

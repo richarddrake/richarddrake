@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas import UploadedMaterial, normalize_case
-from app.services.api_runner import run_api_test
+from app.services.api_runner import run_api_load_test, run_api_test, run_api_test_suite
 from app.services.database import (
     get_database_status,
     get_history_detail,
@@ -33,16 +33,39 @@ GENERATED_DIR = BASE_DIR / "generated"
 
 
 class ApiTestRunRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     name: str = Field(default="", max_length=255)
     method: str = Field(default="GET", max_length=16)
     url: str = Field(..., min_length=1)
     headers: dict[str, Any] = Field(default_factory=dict)
     body: str = ""
+    body_mode: str = Field(default="raw", alias="bodyMode")
+    form_fields: dict[str, Any] = Field(default_factory=dict, alias="formFields")
+    files: list[dict[str, Any]] = Field(default_factory=list)
     expected_status: int | None = Field(default=200, alias="expectedStatus")
     expected_contains: str = Field(default="", alias="expectedContains")
+    max_response_ms: float | None = Field(default=None, alias="maxResponseMs")
     timeout_seconds: float = Field(default=10, alias="timeoutSeconds")
+    variables: dict[str, Any] = Field(default_factory=dict)
+    assertions: list[dict[str, Any]] = Field(default_factory=list)
+    extractors: list[dict[str, Any]] = Field(default_factory=list)
+    json_schema: dict[str, Any] | None = Field(default=None, alias="jsonSchema")
+    database_assertions: list[dict[str, Any]] = Field(default_factory=list, alias="databaseAssertions")
+
+
+class ApiTestSuiteRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str = Field(default="接口用例集", max_length=255)
+    variables: dict[str, Any] = Field(default_factory=dict)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    stop_on_failure: bool = Field(default=False, alias="stopOnFailure")
+
+
+class ApiLoadTestRequest(ApiTestRunRequest):
+    repeat: int = Field(default=10, ge=1, le=100)
+    concurrency: int = Field(default=3, ge=1, le=20)
 
 
 app = FastAPI(title="测试用例智能生成系统", version="1.0.0")
@@ -94,6 +117,30 @@ async def history_detail(session_id: str) -> dict:
 async def run_api_test_case(request: ApiTestRunRequest) -> dict:
     try:
         result = await run_api_test(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    history_status = await asyncio.to_thread(record_api_test_run, result)
+    result["historyStatus"] = history_status
+    return result
+
+
+@app.post("/api/api-tests/suite")
+async def run_api_test_suite_case(request: ApiTestSuiteRequest) -> dict:
+    try:
+        result = await run_api_test_suite(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    history_status = await asyncio.to_thread(record_api_test_run, result)
+    result["historyStatus"] = history_status
+    return result
+
+
+@app.post("/api/api-tests/load")
+async def run_api_load_test_case(request: ApiLoadTestRequest) -> dict:
+    try:
+        result = await run_api_load_test(request.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
