@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
 
+from dotenv import load_dotenv
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine, text
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.exc import SQLAlchemyError
@@ -14,6 +15,8 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 from app.schemas import TestCase, UploadedMaterial
 
+
+load_dotenv()
 
 Base = declarative_base()
 JsonText = Text().with_variant(LONGTEXT, "mysql")
