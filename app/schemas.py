@@ -50,6 +50,14 @@ class TestCase:
     test_data: str = ""
     tags: list[str] = field(default_factory=list)
     source: str = ""
+    requirement_id: str = ""
+    source_type: str = ""
+    coverage_type: str = ""
+    api_test: dict[str, Any] = field(default_factory=dict)
+    quality: dict[str, Any] = field(default_factory=dict)
+    coverage: dict[str, Any] = field(default_factory=dict)
+    execution: dict[str, Any] = field(default_factory=dict)
+    failure_analysis: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -72,6 +80,7 @@ def normalize_case(payload: dict[str, Any], index: int) -> TestCase:
         or []
     )
     test_data = payload.get("test_data") or payload.get("data") or ""
+    api_test = _api_test_from_payload(payload)
 
     return TestCase(
         id=case_id,
@@ -86,7 +95,43 @@ def normalize_case(payload: dict[str, Any], index: int) -> TestCase:
         test_data=_stringify(test_data),
         tags=_as_list(payload.get("tags") or payload.get("coverage")),
         source=str(payload.get("source") or payload.get("basis") or ""),
+        requirement_id=str(payload.get("requirement_id") or payload.get("requirementId") or ""),
+        source_type=str(payload.get("source_type") or payload.get("sourceType") or ""),
+        coverage_type=str(payload.get("coverage_type") or payload.get("coverageType") or ""),
+        api_test=api_test,
+        quality=_as_dict(payload.get("quality")),
+        coverage=_as_dict(payload.get("coverage") if isinstance(payload.get("coverage"), dict) else {}),
+        execution=_as_dict(payload.get("execution")),
+        failure_analysis=_as_dict(payload.get("failure_analysis") or payload.get("failureAnalysis")),
     )
+
+
+def _api_test_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    explicit = payload.get("api_test") or payload.get("apiTest") or payload.get("api")
+    if isinstance(explicit, dict):
+        return explicit
+
+    method = payload.get("method")
+    url = payload.get("url") or payload.get("endpoint")
+    if not method or not url:
+        return {}
+
+    return {
+        "name": payload.get("title") or payload.get("name") or "",
+        "method": method,
+        "url": url,
+        "headers": _as_dict(payload.get("headers")),
+        "body": payload.get("body") or "",
+        "bodyMode": payload.get("body_mode") or payload.get("bodyMode") or "raw",
+        "expectedStatus": payload.get("expected_status") or payload.get("expectedStatus") or 200,
+        "expectedContains": payload.get("expected_contains") or payload.get("expectedContains") or "",
+        "assertions": payload.get("api_assertions") or payload.get("assertions") or [],
+        "extractors": payload.get("extractors") or [],
+        "databaseAssertions": payload.get("database_assertions") or payload.get("databaseAssertions") or [],
+        "jsonSchema": payload.get("json_schema") or payload.get("jsonSchema") or None,
+        "variables": _as_dict(payload.get("variables")),
+        "timeoutSeconds": payload.get("timeout_seconds") or payload.get("timeoutSeconds") or 10,
+    }
 
 
 def _as_list(value: Any) -> list[str]:
@@ -101,6 +146,10 @@ def _as_list(value: Any) -> list[str]:
         return []
     lines = [part.strip(" -\t") for part in text.replace("；", "\n").splitlines()]
     return [line for line in lines if line]
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _stringify(value: Any) -> str:

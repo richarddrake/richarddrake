@@ -34,6 +34,11 @@ scripts/                   Windows 启动和端口释放脚本
 - 支持 MySQL 只读 SELECT 校验，用于验证接口执行后的数据落库和数据一致性
 - 支持接口用例集批量顺序执行、失败中断、并发执行和基础性能指标
 - 支持 MySQL 保存接口测试执行历史、响应摘要、断言结果、变量提取结果和耗时
+- 支持 AI 生成用例携带可执行接口配置，并在用例卡片上一键执行
+- 支持 OpenAPI / Swagger JSON/YAML 导入，自动生成正向、缺参、非法参数、边界、权限和幂等用例
+- 支持覆盖率矩阵：需求、接口、字段、异常、权限、边界、数据一致性、性能、安全
+- 支持用例质量评分：步骤可执行性、预期可验证性、测试数据、覆盖标签、自动化就绪和重复度
+- 支持接口失败分析 Agent，自动归类环境、鉴权、参数、断言、契约变更、后端缺陷和数据库一致性问题
 - 支持 OpenAI-compatible 多模态接口
 - 未配置模型 Key 时提供本地演示生成器，便于验证完整流程
 
@@ -140,6 +145,30 @@ VITE_API_BASE_URL=http://127.0.0.1:8001
 http://127.0.0.1:5173
 ```
 
+## Docker Compose 演示启动
+
+本地开发仍推荐使用上面的固定启动流程。若你已经安装 Docker Desktop，也可以用 Compose 一键启动前端、后端和 MySQL：
+
+```powershell
+docker compose up --build
+```
+
+启动后访问：
+
+```text
+前端：http://127.0.0.1:5173
+后端：http://127.0.0.1:8000
+```
+
+演示材料：
+
+```text
+docs/demo/openapi.json
+docs/demo/prd.md
+```
+
+在前端“OpenAPI / Swagger 导入”面板粘贴 `docs/demo/openapi.json` 内容，可以生成可执行接口用例和覆盖率报告。
+
 ## 模型配置
 
 默认会读取以下环境变量：
@@ -209,7 +238,10 @@ GET http://127.0.0.1:8000/api/database/status
 POST /api/api-tests/run
 POST /api/api-tests/suite
 POST /api/api-tests/load
+POST /api/cases/execute
 GET  /api/api-tests/history?limit=20
+POST /api/openapi/import
+POST /api/coverage/analyze
 ```
 
 执行结果会返回通过状态、实际状态码、耗时、响应预览、断言明细、变量提取结果、数据库校验结果和并发指标；如果 MySQL 已启用，会自动写入 `api_test_runs` 表。

@@ -1,0 +1,157 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AI Test Platform Demo API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8000"
+    }
+  ],
+  "paths": {
+    "/api/database/status": {
+      "get": {
+        "operationId": "getDatabaseStatus",
+        "summary": "读取 MySQL 连接状态",
+        "tags": ["database"],
+        "responses": {
+          "200": {
+            "description": "数据库状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["enabled", "connected", "message"],
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "connected": { "type": "boolean" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history": {
+      "get": {
+        "operationId": "listGenerationHistory",
+        "summary": "查询生成历史",
+        "tags": ["history"],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "历史列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["enabled", "connected", "message", "items"],
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "connected": { "type": "boolean" },
+                    "message": { "type": "string" },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sessionId": { "type": "string" },
+                          "caseCount": { "type": "integer" },
+                          "downloadUrl": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败"
+          }
+        }
+      }
+    },
+    "/api/api-tests/run": {
+      "post": {
+        "operationId": "runApiTest",
+        "summary": "执行单接口测试",
+        "tags": ["api-test"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["method", "url"],
+                "properties": {
+                  "name": { "type": "string", "maxLength": 255 },
+                  "method": { "type": "string", "enum": ["GET", "POST"] },
+                  "url": { "type": "string", "minLength": 8 },
+                  "expectedStatus": { "type": "integer", "minimum": 100, "maximum": 599 },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" }
+                  },
+                  "assertions": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "执行结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["runId", "passed", "assertions", "response"],
+                  "properties": {
+                    "runId": { "type": "string" },
+                    "passed": { "type": "boolean" },
+                    "assertions": {
+                      "type": "array",
+                      "items": { "type": "object" }
+                    },
+                    "response": { "type": "object" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求配置错误"
+          }
+        }
+      }
+    }
+  }
+}

@@ -178,9 +178,13 @@ def _build_prompt(
 3. 再输出 12 到 30 行 event 为 case 的对象，覆盖主流程、分支流程、异常流程、边界值、权限、数据一致性、兼容性、易用性、安全性、性能风险，以及输入材料中暴露出的表格字段、文档规则和链接来源。
 4. 每条 case 必须包含这些字段：
    event, id, module, title, priority, case_type, scenario, preconditions, steps, expected_results, test_data, tags, source
-5. preconditions、steps、expected_results、tags 必须是字符串数组。
-6. priority 只能使用 P0、P1、P2、P3。
-7. id 使用 TC-001 这种格式。
+5. 如果材料中包含接口、OpenAPI、Swagger、URL、接口文档或可推断接口行为，请给对应 case 增加 api_test 对象，结构如下：
+   api_test.method, api_test.url, api_test.headers, api_test.body, api_test.bodyMode, api_test.expectedStatus, api_test.expectedContains, api_test.assertions, api_test.extractors, api_test.databaseAssertions, api_test.jsonSchema, api_test.variables, api_test.timeoutSeconds
+6. api_test.url 可以使用 {{base_url}}、{{token}} 等变量；assertions 应优先使用 status、json、header、body、time、variable 断言，并给出可验证的 expected。
+7. 对接口用例要覆盖正向、缺参、非法参数、边界、权限、重复提交、数据一致性和性能风险。
+8. preconditions、steps、expected_results、tags 必须是字符串数组。
+9. priority 只能使用 P0、P1、P2、P3。
+10. id 使用 TC-001 这种格式。
 
 示例行：
 {{"event":"thought","text":"识别到核心流程包含创建、提交、审批和结果通知。"}}
@@ -242,7 +246,123 @@ async def _generate_demo(
     for index, case in enumerate(cases, 1):
         await asyncio.sleep(0.06)
         case["id"] = f"TC-{index:03d}"
+        case = _with_demo_api_test(case, index)
         yield GenerationEvent("case", case)
+
+
+def _with_demo_api_test(case: dict[str, Any], index: int) -> dict[str, Any]:
+    base_variables = {"base_url": "http://127.0.0.1:8000"}
+    api_tests: dict[int, dict[str, Any]] = {
+        1: {
+            "name": "数据库状态接口检查",
+            "method": "GET",
+            "url": "{{base_url}}/api/database/status",
+            "headers": {"Accept": "application/json"},
+            "body": "",
+            "bodyMode": "raw",
+            "expectedStatus": 200,
+            "expectedContains": "message",
+            "timeoutSeconds": 10,
+            "maxResponseMs": 1000,
+            "variables": base_variables,
+            "assertions": [
+                {"name": "enabled 字段存在", "source": "json", "path": "$.enabled", "operator": "exists"},
+                {"name": "message 字段存在", "source": "json", "path": "$.message", "operator": "exists"},
+            ],
+            "extractors": [{"name": "db_message", "source": "json", "path": "$.message"}],
+            "databaseAssertions": [],
+            "jsonSchema": {
+                "type": "object",
+                "required": ["enabled", "connected", "message"],
+                "properties": {
+                    "enabled": {"type": "boolean"},
+                    "connected": {"type": "boolean"},
+                    "message": {"type": "string"},
+                },
+            },
+        },
+        2: {
+            "name": "生成历史接口检查",
+            "method": "GET",
+            "url": "{{base_url}}/api/history?limit=1",
+            "headers": {"Accept": "application/json"},
+            "body": "",
+            "bodyMode": "raw",
+            "expectedStatus": 200,
+            "expectedContains": "items",
+            "timeoutSeconds": 10,
+            "maxResponseMs": 1500,
+            "variables": base_variables,
+            "assertions": [
+                {"name": "items 字段存在", "source": "json", "path": "$.items", "operator": "exists"},
+                {"name": "message 字段存在", "source": "json", "path": "$.message", "operator": "exists"},
+            ],
+            "extractors": [],
+            "databaseAssertions": [],
+            "jsonSchema": {
+                "type": "object",
+                "required": ["enabled", "connected", "message", "items"],
+                "properties": {
+                    "enabled": {"type": "boolean"},
+                    "connected": {"type": "boolean"},
+                    "message": {"type": "string"},
+                    "items": {"type": "array"},
+                },
+            },
+        },
+        6: {
+            "name": "执行器接口自检",
+            "method": "POST",
+            "url": "{{base_url}}/api/api-tests/run",
+            "headers": {"Accept": "application/json", "Content-Type": "application/json"},
+            "body": json.dumps(
+                {
+                    "name": "嵌套健康检查",
+                    "method": "GET",
+                    "url": "http://127.0.0.1:8000/",
+                    "expectedStatus": 200,
+                    "assertions": [{"name": "status 字段存在", "source": "json", "path": "$.status", "operator": "exists"}],
+                },
+                ensure_ascii=False,
+            ),
+            "bodyMode": "json",
+            "expectedStatus": 200,
+            "expectedContains": "passed",
+            "timeoutSeconds": 10,
+            "maxResponseMs": 3000,
+            "variables": base_variables,
+            "assertions": [
+                {"name": "执行结果存在", "source": "json", "path": "$.passed", "operator": "exists"},
+                {"name": "断言摘要存在", "source": "json", "path": "$.summary", "operator": "exists"},
+            ],
+            "extractors": [{"name": "nested_run_id", "source": "json", "path": "$.runId"}],
+            "databaseAssertions": [],
+            "jsonSchema": {"type": "object", "required": ["runId", "passed", "assertions"]},
+        },
+        9: {
+            "name": "接口执行历史检查",
+            "method": "GET",
+            "url": "{{base_url}}/api/api-tests/history?limit=5",
+            "headers": {"Accept": "application/json"},
+            "body": "",
+            "bodyMode": "raw",
+            "expectedStatus": 200,
+            "expectedContains": "items",
+            "timeoutSeconds": 10,
+            "maxResponseMs": 1500,
+            "variables": base_variables,
+            "assertions": [{"name": "items 字段存在", "source": "json", "path": "$.items", "operator": "exists"}],
+            "extractors": [],
+            "databaseAssertions": [],
+            "jsonSchema": {"type": "object", "required": ["enabled", "connected", "message", "items"]},
+        },
+    }
+    if index in api_tests:
+        enriched = dict(case)
+        enriched["api_test"] = api_tests[index]
+        enriched["tags"] = [*enriched.get("tags", []), "接口", "自动化"]
+        return enriched
+    return case
 
 
 def _demo_cases() -> list[dict[str, Any]]:

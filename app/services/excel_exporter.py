@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -22,6 +23,10 @@ HEADERS = [
     ("test_data", "测试数据"),
     ("tags", "标签"),
     ("source", "依据"),
+    ("quality", "质量评分"),
+    ("coverage", "覆盖分析"),
+    ("api_test", "可执行接口配置"),
+    ("execution", "最近执行结果"),
 ]
 
 
@@ -47,6 +52,19 @@ def save_cases_to_excel(cases: list[TestCase], target_dir: Path, session_id: str
 def _cell_value(value: object) -> str:
     if isinstance(value, list):
         return "\n".join(f"{idx}. {item}" for idx, item in enumerate(value, 1))
+    if isinstance(value, dict):
+        if "score" in value:
+            issues = value.get("issues") or []
+            suggestions = value.get("suggestions") or []
+            return "\n".join(
+                [
+                    f"score: {value.get('score')}",
+                    f"level: {value.get('level', '')}",
+                    f"issues: {'；'.join(str(item) for item in issues)}",
+                    f"suggestions: {'；'.join(str(item) for item in suggestions)}",
+                ]
+            ).strip()
+        return json.dumps(value, ensure_ascii=False, indent=2)
     if value is None:
         return ""
     return str(value)
@@ -64,7 +82,7 @@ def _style_sheet(sheet) -> None:
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = border
 
-    widths = [14, 18, 34, 10, 12, 30, 34, 42, 42, 24, 20, 28]
+    widths = [14, 18, 34, 10, 12, 30, 34, 42, 42, 24, 20, 28, 34, 34, 48, 34]
     for index, width in enumerate(widths, 1):
         sheet.column_dimensions[get_column_letter(index)].width = width
 

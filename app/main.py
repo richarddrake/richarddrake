@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -14,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas import UploadedMaterial, normalize_case
 from app.services.api_runner import run_api_load_test, run_api_test, run_api_test_suite
+from app.services.case_quality import build_coverage_report, enrich_case_dict, enrich_cases
 from app.services.database import (
     get_database_status,
     get_history_detail,
@@ -24,8 +26,10 @@ from app.services.database import (
     record_generation_session,
 )
 from app.services.excel_exporter import save_cases_to_excel
+from app.services.failure_agent import analyze_failure
 from app.services.generator import GenerationEvent, generate_test_cases
 from app.services.material_parser import build_material_context, read_upload_materials
+from app.services.openapi_importer import generate_cases_from_openapi
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -66,6 +70,28 @@ class ApiTestSuiteRequest(BaseModel):
 class ApiLoadTestRequest(ApiTestRunRequest):
     repeat: int = Field(default=10, ge=1, le=100)
     concurrency: int = Field(default=3, ge=1, le=20)
+
+
+class GeneratedCaseExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    case: dict[str, Any] = Field(default_factory=dict)
+    api_test: dict[str, Any] = Field(default_factory=dict, alias="apiTest")
+    variables: dict[str, Any] = Field(default_factory=dict)
+
+
+class OpenApiImportRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    content: str = ""
+    url: str = ""
+    base_url: str = Field(default="", alias="baseUrl")
+
+
+class CoverageAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    cases: list[dict[str, Any]] = Field(default_factory=list)
 
 
 app = FastAPI(title="测试用例智能生成系统", version="1.0.0")
@@ -120,6 +146,8 @@ async def run_api_test_case(request: ApiTestRunRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if not result.get("passed"):
+        result["failureAnalysis"] = analyze_failure(result)
     history_status = await asyncio.to_thread(record_api_test_run, result)
     result["historyStatus"] = history_status
     return result
@@ -132,6 +160,8 @@ async def run_api_test_suite_case(request: ApiTestSuiteRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if not result.get("passed"):
+        result["failureAnalysis"] = analyze_failure(result)
     history_status = await asyncio.to_thread(record_api_test_run, result)
     result["historyStatus"] = history_status
     return result
@@ -144,6 +174,8 @@ async def run_api_load_test_case(request: ApiLoadTestRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if not result.get("passed"):
+        result["failureAnalysis"] = analyze_failure(result)
     history_status = await asyncio.to_thread(record_api_test_run, result)
     result["historyStatus"] = history_status
     return result
@@ -152,6 +184,61 @@ async def run_api_load_test_case(request: ApiLoadTestRequest) -> dict:
 @app.get("/api/api-tests/history")
 async def api_test_history(limit: int = Query(default=20, ge=1, le=100)) -> dict:
     return list_api_test_runs(limit=limit)
+
+
+@app.post("/api/cases/execute")
+async def execute_generated_case(request: GeneratedCaseExecuteRequest) -> dict:
+    payload = _case_api_payload(request.case, request.api_test, request.variables)
+    try:
+        result = await run_api_test(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result["caseId"] = request.case.get("id") or request.case.get("case_id") or ""
+    result["caseTitle"] = request.case.get("title") or payload.get("name") or ""
+    result["failureAnalysis"] = analyze_failure(result, request.case)
+    history_status = await asyncio.to_thread(record_api_test_run, result)
+    result["historyStatus"] = history_status
+    return result
+
+
+@app.post("/api/openapi/import")
+async def import_openapi(request: OpenApiImportRequest) -> dict:
+    try:
+        data = await generate_cases_from_openapi(
+            content=request.content,
+            url=request.url,
+            base_url=request.base_url,
+        )
+        session_id = datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8]
+        cases = enrich_cases([normalize_case(item, index + 1) for index, item in enumerate(data.get("cases") or [])])
+        excel_path = save_cases_to_excel(cases, GENERATED_DIR, session_id)
+        history_status = await asyncio.to_thread(
+            record_generation_session,
+            session_id=session_id,
+            requirements=f"OpenAPI 导入：{data.get('title') or ''}",
+            context=f"接口数量 {data.get('operationCount', 0)}，基础地址 {data.get('baseUrl', '')}",
+            references=request.url or "OpenAPI pasted content",
+            materials=[],
+            cases=cases,
+            excel_path=excel_path,
+        )
+        data["cases"] = [case.to_dict() for case in cases]
+        data["coverageReport"] = build_coverage_report(cases)
+        data["sessionId"] = session_id
+        data["downloadUrl"] = f"/api/download/{excel_path.name}"
+        data["historyStatus"] = history_status
+        return data
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=400, detail=f"读取 OpenAPI URL 失败：{exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/coverage/analyze")
+async def analyze_coverage(request: CoverageAnalyzeRequest) -> dict:
+    enriched = [enrich_case_dict(item, request.cases) for item in request.cases]
+    return build_coverage_report(enriched)
 
 
 @app.post("/api/generate")
@@ -214,12 +301,18 @@ async def _stream_generation(
         async for event in generate_test_cases(requirements, context, references, materials, material_context):
             if event.kind == "case":
                 case = normalize_case(event.payload, len(cases) + 1)
+                case = enrich_cases([*cases, case])[-1]
                 cases.append(case)
                 yield _sse("case", case.to_dict())
             elif event.kind in {"thought", "status"}:
                 yield _sse("thought", event.payload)
             else:
                 yield _sse(event.kind, event.payload)
+
+        cases = enrich_cases(cases)
+        coverage_report = build_coverage_report(cases)
+        yield _sse("cases", {"items": [case.to_dict() for case in cases]})
+        yield _sse("coverage", coverage_report)
 
         excel_path = save_cases_to_excel(cases, GENERATED_DIR, session_id)
         history_status = await asyncio.to_thread(
@@ -246,6 +339,7 @@ async def _stream_generation(
                 "count": len(cases),
                 "downloadUrl": f"/api/download/{excel_path.name}",
                 "historyStatus": history_status,
+                "coverageReport": coverage_report,
             },
         )
     except Exception as exc:
@@ -255,3 +349,15 @@ async def _stream_generation(
 def _sse(event: str, data: dict) -> str:
     payload = json.dumps(data, ensure_ascii=False)
     return f"event: {event}\ndata: {payload}\n\n"
+
+
+def _case_api_payload(case: dict[str, Any], api_test: dict[str, Any], variables: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(api_test or case.get("api_test") or case.get("apiTest") or {})
+    if not payload:
+        raise HTTPException(status_code=400, detail="这条用例没有可执行的 api_test 配置。")
+    if not payload.get("method") or not payload.get("url"):
+        raise HTTPException(status_code=400, detail="api_test 必须包含 method 和 url。")
+    payload["name"] = payload.get("name") or case.get("title") or f"{payload.get('method')} {payload.get('url')}"
+    payload_variables = payload.get("variables") if isinstance(payload.get("variables"), dict) else {}
+    payload["variables"] = {**payload_variables, **variables}
+    return payload

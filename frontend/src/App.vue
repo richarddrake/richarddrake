@@ -22,6 +22,10 @@
           <List aria-hidden="true" />
           流式日志
         </a>
+        <a class="nav-item" href="#openApiTitle">
+          <Network aria-hidden="true" />
+          契约导入
+        </a>
         <a class="nav-item" href="#apiRunnerTitle" @click="fetchApiRunHistory">
           <PlayCircle aria-hidden="true" />
           接口执行
@@ -84,6 +88,59 @@
         <div class="signal-card">
           <span>EXECUTION</span>
           <strong>API Test Run</strong>
+        </div>
+      </section>
+
+      <section class="panel openapi-panel" aria-labelledby="openApiTitle">
+        <div class="panel-heading result-heading">
+          <div>
+            <p class="eyebrow">Contract Node</p>
+            <h2 id="openApiTitle">OpenAPI / Swagger 导入</h2>
+          </div>
+          <div class="result-actions">
+            <button class="secondary-button" type="button" :disabled="isOpenApiImporting" @click="resetOpenApiImport">
+              <RefreshCw aria-hidden="true" />
+              重置
+            </button>
+            <button class="primary-button" type="button" :disabled="isOpenApiImporting" @click="importOpenApi">
+              <Upload aria-hidden="true" />
+              {{ isOpenApiImporting ? "导入中" : "导入生成" }}
+            </button>
+          </div>
+        </div>
+
+        <div class="openapi-grid">
+          <div class="api-form-stack">
+            <div class="api-form-row">
+              <div class="field-group compact-field">
+                <label for="openApiUrl">文档 URL</label>
+                <input id="openApiUrl" v-model="openApiUrl" class="text-input" type="url" placeholder="https://example.com/openapi.json" />
+              </div>
+              <div class="field-group compact-field">
+                <label for="openApiBaseUrl">接口基础地址</label>
+                <input id="openApiBaseUrl" v-model="openApiBaseUrl" class="text-input" type="url" placeholder="http://127.0.0.1:8000" />
+              </div>
+            </div>
+            <div class="field-group compact-field">
+              <label for="openApiContent">OpenAPI JSON / YAML</label>
+              <textarea id="openApiContent" v-model="openApiContent" rows="9" spellcheck="false" placeholder="{ &quot;openapi&quot;: &quot;3.0.0&quot;, &quot;paths&quot;: {} }"></textarea>
+            </div>
+          </div>
+
+          <div class="openapi-summary">
+            <div class="status-item">
+              <span class="status-label">接口数</span>
+              <strong>{{ openApiSummary.operationCount ?? "-" }}</strong>
+            </div>
+            <div class="status-item">
+              <span class="status-label">生成用例</span>
+              <strong>{{ openApiSummary.caseCount ?? "-" }}</strong>
+            </div>
+            <div class="status-item">
+              <span class="status-label">契约来源</span>
+              <strong>{{ openApiSummary.title || "等待导入" }}</strong>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -268,6 +325,11 @@
                   </div>
                 </div>
 
+                <div v-if="apiRunResult.failureAnalysis && !apiRunResult.passed" class="failure-analysis api-failure-analysis">
+                  <strong>{{ apiRunResult.failureAnalysis.summary }}</strong>
+                  <span>{{ (apiRunResult.failureAnalysis.nextSteps || []).slice(0, 3).join("；") }}</span>
+                </div>
+
                 <pre class="response-preview">{{ apiRunResult.response?.bodyPreview || apiRunResult.error || "无响应体" }}</pre>
               </div>
               <div v-else class="empty-state api-empty">
@@ -413,10 +475,36 @@
               <span class="status-label">优先级</span>
               <strong>{{ priorityMix }}</strong>
             </div>
+            <div class="status-item">
+              <span class="status-label">质量均分</span>
+              <strong>{{ coverageReport?.averageQualityScore ?? "-" }}</strong>
+            </div>
+            <div class="status-item">
+              <span class="status-label">可执行</span>
+              <strong>{{ coverageReport?.automationReady ?? executableCaseCount }}/{{ cases.length || 0 }}</strong>
+            </div>
           </div>
 
           <div class="progress-track" aria-hidden="true">
             <span :style="{ width: `${progress}%` }"></span>
+          </div>
+
+          <div v-if="coverageReport" class="coverage-panel">
+            <div class="coverage-head">
+              <span class="side-card-label">COVERAGE MATRIX</span>
+              <strong>{{ Math.round((coverageReport.automationRatio || 0) * 100) }}% 自动化就绪</strong>
+            </div>
+            <div class="coverage-grid">
+              <div v-for="item in coverageCards" :key="item.key" class="coverage-card">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.covered }}/{{ coverageReport.totalCases || 0 }}</strong>
+                <div class="coverage-bar" aria-hidden="true"><i :style="{ width: `${item.percent}%` }"></i></div>
+              </div>
+            </div>
+            <div v-if="(coverageReport.risks || []).length" class="risk-strip">
+              <AlertTriangle aria-hidden="true" />
+              <span>{{ coverageReport.risks.slice(0, 2).join("；") }}</span>
+            </div>
           </div>
 
           <div class="toolbar">
@@ -440,6 +528,8 @@
                     <span class="pill" :class="priorityClass(item.priority)">{{ item.priority || "P1" }}</span>
                     <span class="pill">{{ item.id || "" }}</span>
                     <span class="pill">{{ item.case_type || "功能" }}</span>
+                    <span v-if="item.quality?.score" class="pill quality-pill">Q{{ item.quality.score }}</span>
+                    <span v-if="caseApiConfig(item)" class="pill api-ready-pill">API</span>
                   </div>
                   <h3>{{ item.title || "未命名用例" }}</h3>
                   <div class="pill">{{ item.module || "核心流程" }}</div>
@@ -460,6 +550,30 @@
                     <li v-for="result in toList(item.expected_results)" :key="result">{{ result }}</li>
                   </ul>
                 </section>
+                <section v-if="caseApiConfig(item)" class="case-section case-api-section">
+                  <h4>接口</h4>
+                  <div class="case-api-line">
+                    <code>{{ caseApiConfig(item).method }} {{ caseApiConfig(item).url }}</code>
+                    <button class="mini-run-button" type="button" :disabled="executingCaseId === item.id" @click="executeGeneratedCase(item)">
+                      <PlayCircle aria-hidden="true" />
+                      {{ executingCaseId === item.id ? "执行中" : "执行" }}
+                    </button>
+                  </div>
+                  <div v-if="caseExecutionMap[item.id]" class="case-execution" :class="{ passed: caseExecutionMap[item.id].passed }">
+                    <span>{{ caseExecutionMap[item.id].passed ? "通过" : "未通过" }}</span>
+                    <strong>HTTP {{ caseExecutionMap[item.id].response?.statusCode ?? "-" }} · {{ caseExecutionMap[item.id].response?.durationMs ?? 0 }} ms</strong>
+                  </div>
+                  <div v-if="caseExecutionMap[item.id]?.failureAnalysis && !caseExecutionMap[item.id].passed" class="failure-analysis">
+                    <strong>{{ caseExecutionMap[item.id].failureAnalysis.summary }}</strong>
+                    <span>{{ (caseExecutionMap[item.id].failureAnalysis.nextSteps || []).slice(0, 2).join("；") }}</span>
+                  </div>
+                </section>
+                <section v-if="item.quality?.suggestions?.length" class="case-section quality-section">
+                  <h4>质量建议</h4>
+                  <ul>
+                    <li v-for="tip in item.quality.suggestions.slice(0, 2)" :key="tip">{{ tip }}</li>
+                  </ul>
+                </section>
               </article>
             </div>
 
@@ -472,6 +586,8 @@
                     <th>标题</th>
                     <th>优先级</th>
                     <th>类型</th>
+                    <th>质量</th>
+                    <th>接口</th>
                     <th>步骤</th>
                     <th>预期结果</th>
                   </tr>
@@ -483,6 +599,8 @@
                     <td>{{ item.title || "" }}</td>
                     <td><span class="pill" :class="priorityClass(item.priority)">{{ item.priority || "" }}</span></td>
                     <td>{{ item.case_type || "" }}</td>
+                    <td>{{ item.quality?.score ?? "-" }}</td>
+                    <td>{{ caseApiConfig(item)?.method || "-" }}</td>
                     <td>
                       <template v-for="(step, index) in toList(item.steps)" :key="step">
                         {{ index + 1 }}. {{ step }}<br />
@@ -593,6 +711,7 @@ import {
   List,
   ListChecks,
   Moon,
+  Network,
   PlayCircle,
   RefreshCw,
   Search,
@@ -660,6 +779,14 @@ const selectedHistoryId = ref("");
 const databaseMessage = ref("MySQL 状态检测中");
 const databaseConnected = ref(false);
 const toastMessage = ref("");
+const coverageReport = ref(null);
+const openApiContent = ref("");
+const openApiUrl = ref("");
+const openApiBaseUrl = ref(API_BASE_URL || "http://127.0.0.1:8000");
+const openApiSummary = ref({});
+const isOpenApiImporting = ref(false);
+const caseExecutionMap = ref({});
+const executingCaseId = ref("");
 let toastTimer = null;
 let logCounter = 0;
 
@@ -680,6 +807,30 @@ const priorityMix = computed(() => {
   return Object.entries(counts)
     .map(([key, value]) => `${key}:${value}`)
     .join(" / ") || "-";
+});
+
+const executableCaseCount = computed(() => cases.value.filter((item) => Boolean(caseApiConfig(item))).length);
+
+const coverageCards = computed(() => {
+  const report = coverageReport.value;
+  const coverage = report?.coverage || {};
+  const labels = [
+    ["requirement", "需求"],
+    ["interface", "接口"],
+    ["field", "字段"],
+    ["exception", "异常"],
+    ["permission", "权限"],
+    ["boundary", "边界"],
+  ];
+  return labels.map(([key, label]) => {
+    const item = coverage[key] || {};
+    return {
+      key,
+      label,
+      covered: item.covered || 0,
+      percent: Math.round((item.ratio || 0) * 100),
+    };
+  });
 });
 
 const apiResultClass = computed(() => {
@@ -806,6 +957,8 @@ function prepareGenerationState() {
   cases.value = [];
   logs.value = [];
   downloadUrl.value = "";
+  coverageReport.value = null;
+  caseExecutionMap.value = {};
   statusText.value = "生成中";
   progress.value = 6;
 }
@@ -874,8 +1027,21 @@ function handleEvent(eventName, data) {
     return;
   }
 
+  if (eventName === "cases") {
+    cases.value = data.items || cases.value;
+    appendLog("用例质量评分已更新。");
+    return;
+  }
+
+  if (eventName === "coverage") {
+    coverageReport.value = data;
+    appendLog("覆盖率矩阵已生成。");
+    return;
+  }
+
   if (eventName === "done") {
     downloadUrl.value = data.downloadUrl;
+    coverageReport.value = data.coverageReport || coverageReport.value;
     statusText.value = `完成，已保存 ${data.count || cases.value.length} 条`;
     progress.value = 100;
     appendLog("Excel 已生成。");
@@ -920,6 +1086,8 @@ function resetAll() {
   cases.value = [];
   logs.value = [];
   downloadUrl.value = "";
+  coverageReport.value = null;
+  caseExecutionMap.value = {};
   requirements.value = "";
   context.value = "";
   references.value = "";
@@ -934,6 +1102,60 @@ async function copyCases() {
   } catch {
     showToast("复制失败。");
   }
+}
+
+async function importOpenApi() {
+  if (isOpenApiImporting.value) {
+    return;
+  }
+  if (!openApiUrl.value.trim() && !openApiContent.value.trim()) {
+    showToast("请填写 OpenAPI URL 或粘贴 JSON/YAML 内容。");
+    return;
+  }
+
+  isOpenApiImporting.value = true;
+  statusText.value = "导入 OpenAPI";
+  try {
+    const response = await fetch(apiUrl("/api/openapi/import"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: openApiUrl.value.trim(),
+        content: openApiContent.value.trim(),
+        baseUrl: openApiBaseUrl.value.trim(),
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+    const data = await response.json();
+    cases.value = data.cases || [];
+    coverageReport.value = data.coverageReport || null;
+    openApiSummary.value = {
+      title: data.title,
+      operationCount: data.operationCount,
+      caseCount: data.caseCount,
+    };
+    downloadUrl.value = data.downloadUrl || "";
+    statusText.value = `OpenAPI 已生成 ${cases.value.length} 条`;
+    progress.value = 100;
+    activeView.value = "cards";
+    appendLog(`OpenAPI 导入完成：${data.operationCount || 0} 个接口，${cases.value.length} 条用例。`);
+    fetchHistory();
+    showToast("OpenAPI 用例已生成。");
+  } catch (error) {
+    showToast(error.message || "OpenAPI 导入失败");
+    appendLog(error.message || "OpenAPI 导入失败");
+  } finally {
+    isOpenApiImporting.value = false;
+  }
+}
+
+function resetOpenApiImport() {
+  openApiContent.value = "";
+  openApiUrl.value = "";
+  openApiBaseUrl.value = API_BASE_URL || "http://127.0.0.1:8000";
+  openApiSummary.value = {};
 }
 
 async function fetchDatabaseStatus() {
@@ -1008,12 +1230,62 @@ async function runApiTest() {
 
     const data = await response.json();
     apiRunResult.value = data;
+    if (data.failureAnalysis && !data.passed) {
+      appendLog(`失败分析：${data.failureAnalysis.summary}`);
+    }
     showToast(data.passed ? "接口测试执行通过。" : "接口测试执行未通过。");
     fetchApiRunHistory();
   } catch (error) {
     showToast(error.message || "接口执行失败");
   } finally {
     isApiRunning.value = false;
+  }
+}
+
+async function executeGeneratedCase(item) {
+  const config = caseApiConfig(item);
+  if (!config) {
+    showToast("这条用例没有可执行接口配置。");
+    return;
+  }
+  const caseId = item.id || item.title || String(Date.now());
+  executingCaseId.value = caseId;
+  try {
+    const response = await fetch(apiUrl("/api/cases/execute"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        case: item,
+        apiTest: config,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+    const data = await response.json();
+    caseExecutionMap.value = { ...caseExecutionMap.value, [caseId]: data };
+    cases.value = cases.value.map((current) =>
+      (current.id || current.title) === caseId
+        ? {
+            ...current,
+            execution: {
+              runId: data.runId,
+              passed: data.passed,
+              statusCode: data.response?.statusCode,
+              durationMs: data.response?.durationMs,
+              executedAt: data.createdAt,
+            },
+            failure_analysis: data.failureAnalysis,
+          }
+        : current,
+    );
+    apiRunResult.value = data;
+    fetchApiRunHistory();
+    showToast(data.passed ? "生成用例执行通过。" : "生成用例执行未通过。");
+  } catch (error) {
+    showToast(error.message || "生成用例执行失败");
+  } finally {
+    executingCaseId.value = "";
   }
 }
 
@@ -1150,6 +1422,8 @@ async function loadHistoryDetail(sessionId) {
     const detail = await response.json();
     selectedHistoryId.value = sessionId;
     cases.value = detail.cases || [];
+    caseExecutionMap.value = {};
+    coverageReport.value = await analyzeCurrentCoverage(cases.value);
     downloadUrl.value = detail.downloadUrl || "";
     statusText.value = `已加载历史 ${cases.value.length} 条`;
     progress.value = cases.value.length ? 100 : 0;
@@ -1202,6 +1476,30 @@ function createDefaultApiTest() {
     jsonSchemaText: '{\n  "type": "object",\n  "required": ["enabled", "connected", "message"],\n  "properties": {\n    "enabled": { "type": "boolean" },\n    "connected": { "type": "boolean" },\n    "message": { "type": "string" }\n  }\n}',
     suiteStepsText: `[\n  {\n    "name": "数据库状态检查",\n    "method": "GET",\n    "url": "{{base_url}}/api/database/status",\n    "headers": { "Accept": "application/json" },\n    "expectedStatus": 200,\n    "assertions": [\n      { "name": "MySQL 已连接", "source": "json", "path": "$.connected", "operator": "equals", "expected": true }\n    ],\n    "extractors": [\n      { "name": "db_message", "source": "json", "path": "$.message" }\n    ]\n  },\n  {\n    "name": "历史记录接口检查",\n    "method": "GET",\n    "url": "{{base_url}}/api/history?limit=1",\n    "headers": { "Accept": "application/json" },\n    "expectedStatus": 200,\n    "assertions": [\n      { "name": "items 字段存在", "source": "json", "path": "$.items", "operator": "exists" }\n    ]\n  }\n]`,
   };
+}
+
+async function analyzeCurrentCoverage(items) {
+  if (!items.length) {
+    return null;
+  }
+  try {
+    const response = await fetch(apiUrl("/api/coverage/analyze"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cases: items }),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function caseApiConfig(item) {
+  const config = item?.api_test || item?.apiTest;
+  return config && config.method && config.url ? config : null;
 }
 
 function buildApiPayload() {
