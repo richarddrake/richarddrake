@@ -18,9 +18,19 @@ scripts/                   Windows 启动和端口释放脚本
 - 后端只提供 API、流式生成和 Excel 下载，不再托管静态页面。
 - 开发环境下，Vite 会把 `/api` 请求代理到 `http://127.0.0.1:8000`。
 
+## 文档入口
+
+- 产品汇报版文档：[`docs/PRODUCT_REPORT.md`](docs/PRODUCT_REPORT.md)
+- 多源材料输入说明：[`docs/MATERIAL_INPUTS.md`](docs/MATERIAL_INPUTS.md)
+- 模型接入配置说明：[`docs/MODEL_SETUP.md`](docs/MODEL_SETUP.md)
+- MySQL 配置说明：[`docs/MYSQL_SETUP.md`](docs/MYSQL_SETUP.md)
+- 接口测试执行说明：[`docs/API_TEST_EXECUTION.md`](docs/API_TEST_EXECUTION.md)
+
+> 维护约定：每次系统版本更新、功能迭代或能力下线后，必须同步更新 `docs/PRODUCT_REPORT.md`。
+
 ## 功能
 
-- 科技风 Vue 前端界面，包含左侧导航栏、输入工作台、用例矩阵和流式日志
+- 科技风 Vue 前端界面，包含左侧导航栏、工作台、用例矩阵、Swagger 导入、接口执行和历史记录
 - 多源材料上传与预览
 - 支持图片、Excel、CSV、Word、PDF、Markdown、JSON、YAML、文本文件、飞书/网页链接
 - 需求、上下文背景、外部文档链接输入
