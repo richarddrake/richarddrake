@@ -1,3 +1,4 @@
+# 这个模块负责评估测试用例质量、补充覆盖标签，并生成整体覆盖率分析报告。
 from __future__ import annotations
 
 from collections import Counter

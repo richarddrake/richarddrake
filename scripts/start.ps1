@@ -1,3 +1,4 @@
+# 这个脚本负责检查后端端口占用情况，并启动 FastAPI 服务。
 param(
     [string]$HostAddress = "127.0.0.1",
     [int]$Port = 8000,

@@ -1,3 +1,4 @@
+# 这个 Compose 文件负责一键拉起前端、后端和 MySQL 的本地演示环境。
 services:
   mysql:
     image: mysql:8.0

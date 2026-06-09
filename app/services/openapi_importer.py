@@ -1,3 +1,4 @@
+# 这个模块负责解析 OpenAPI/Swagger 文档，并自动生成可执行的接口测试用例集合。
 from __future__ import annotations
 
 import json

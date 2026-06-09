@@ -1,3 +1,4 @@
+# 这个模块负责提供 FastAPI 主入口，并统一暴露生成、导出、历史记录和接口执行相关 API。
 from __future__ import annotations
 
 import asyncio

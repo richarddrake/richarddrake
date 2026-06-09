@@ -1,3 +1,4 @@
+-- 这个初始化脚本负责准备演示环境所需的数据库字符集和种子说明数据。
 ALTER DATABASE ai_testcase CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS demo_seed_notes (

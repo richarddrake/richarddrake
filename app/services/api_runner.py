@@ -1,3 +1,4 @@
+# 这个模块负责执行单接口、接口用例集和并发压测，并输出断言、提取和数据库校验结果。
 from __future__ import annotations
 
 import asyncio

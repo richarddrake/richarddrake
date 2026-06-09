@@ -1,3 +1,4 @@
+# 这个模块负责管理 MySQL 连接、历史记录持久化，以及只读数据库校验查询。
 from __future__ import annotations
 
 import json

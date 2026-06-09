@@ -1,1 +1,1 @@
-"""Smart test case generation app."""
+"""这个包负责组织测试用例智能生成系统的 FastAPI 应用、数据结构和后端服务。"""

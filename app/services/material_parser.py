@@ -1,3 +1,4 @@
+# 这个模块负责解析图片、文档、表格和文本材料，并提取可用于生成用例的上下文内容。
 from __future__ import annotations
 
 import csv

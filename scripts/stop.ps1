@@ -1,3 +1,4 @@
+# 这个脚本负责关闭占用后端端口的进程，并尽量清理关联的 Uvicorn 进程树。
 param(
     [string]$HostAddress = "127.0.0.1",
     [int]$Port = 8000

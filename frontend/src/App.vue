@@ -1,3 +1,4 @@
+<!-- 这个页面文件负责渲染测试平台主界面，并串联生成、导入、执行和历史记录等前端交互。 -->
 <template>
   <div class="app-shell">
     <aside class="sidebar" aria-label="主导航">

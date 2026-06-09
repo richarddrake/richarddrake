@@ -1,3 +1,4 @@
+# 这个模块负责定义上传材料和测试用例的数据结构，并把模型输出整理成统一格式。
 from __future__ import annotations
 
 import base64

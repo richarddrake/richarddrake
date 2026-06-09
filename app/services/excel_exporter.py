@@ -1,3 +1,4 @@
+# 这个模块负责把生成后的测试用例整理成 Excel 文件并应用统一表格样式。
 from __future__ import annotations
 
 import json

@@ -1,3 +1,4 @@
+# 这个模块负责调用多模态模型或本地演示生成器，并流式产出结构化测试用例事件。
 from __future__ import annotations
 
 import asyncio

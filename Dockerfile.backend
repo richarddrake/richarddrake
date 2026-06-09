@@ -1,3 +1,4 @@
+# 这个 Dockerfile 负责构建 FastAPI 后端镜像，供本地演示和 Compose 启动使用。
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1

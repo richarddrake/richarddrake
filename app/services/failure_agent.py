@@ -1,3 +1,4 @@
+# 这个模块负责在接口执行失败后给出原因归类、证据摘要和下一步排查建议。
 from __future__ import annotations
 
 from typing import Any
