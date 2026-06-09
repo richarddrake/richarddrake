@@ -930,14 +930,12 @@ input[type="search"]:focus,
 }
 
 .case-grid,
-.table-wrap,
-.stream-log {
+.table-wrap {
   display: none;
 }
 
 .case-grid.active,
-.table-wrap.active,
-.stream-log.active {
+.table-wrap.active {
   display: block;
 }
 
@@ -1164,30 +1162,6 @@ th {
 
 td {
   font-size: 14px;
-}
-
-.stream-log {
-  min-height: 420px;
-  max-height: calc(100vh - 380px);
-  overflow: auto;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-strong);
-}
-
-.log-line {
-  display: grid;
-  grid-template-columns: 78px 1fr;
-  gap: 10px;
-  padding: 9px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line), transparent 45%);
-  line-height: 1.5;
-}
-
-.log-line time {
-  color: var(--amber);
-  font-size: 12px;
 }
 
 .empty-state {

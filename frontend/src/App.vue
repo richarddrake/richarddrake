@@ -19,13 +19,9 @@
           <BarChart3 aria-hidden="true" />
           用例矩阵
         </a>
-        <a class="nav-item" href="#streamView">
-          <List aria-hidden="true" />
-          流式日志
-        </a>
         <a class="nav-item" href="#openApiTitle">
           <Network aria-hidden="true" />
-          契约导入
+          Swagger 导入
         </a>
         <a class="nav-item" href="#apiRunnerTitle" @click="fetchApiRunHistory">
           <PlayCircle aria-hidden="true" />
@@ -95,8 +91,8 @@
       <section class="panel openapi-panel" aria-labelledby="openApiTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Contract Node</p>
-            <h2 id="openApiTitle">OpenAPI / Swagger 导入</h2>
+            <p class="eyebrow">Swagger Import</p>
+            <h2 id="openApiTitle">Swagger 导入</h2>
           </div>
           <div class="result-actions">
             <button class="secondary-button" type="button" :disabled="isOpenApiImporting" @click="resetOpenApiImport">
@@ -138,7 +134,7 @@
               <strong>{{ openApiSummary.caseCount ?? "-" }}</strong>
             </div>
             <div class="status-item">
-              <span class="status-label">契约来源</span>
+              <span class="status-label">文档来源</span>
               <strong>{{ openApiSummary.title || "等待导入" }}</strong>
             </div>
           </div>
@@ -516,7 +512,6 @@
             <div class="segmented" role="tablist" aria-label="结果视图">
               <button class="tab-button" :class="{ active: activeView === 'cards' }" type="button" @click="activeView = 'cards'">卡片</button>
               <button class="tab-button" :class="{ active: activeView === 'table' }" type="button" @click="activeView = 'table'">表格</button>
-              <button class="tab-button" :class="{ active: activeView === 'stream' }" type="button" @click="activeView = 'stream'">流</button>
             </div>
           </div>
 
@@ -617,12 +612,6 @@
               </table>
             </div>
 
-            <div id="streamView" ref="streamView" class="stream-log" :class="{ active: activeView === 'stream' }" aria-live="polite">
-              <div v-for="line in logs" :key="line.id" class="log-line">
-                <time>{{ line.time }}</time>
-                <span>{{ line.text }}</span>
-              </div>
-            </div>
           </div>
         </section>
       </section>
@@ -697,7 +686,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
   AlertTriangle,
   BarChart3,
@@ -709,7 +698,6 @@ import {
   Gauge,
   Database,
   History,
-  List,
   ListChecks,
   Moon,
   Network,
@@ -754,10 +742,8 @@ const SUPPORTED_EXTENSIONS = new Set([
 ]);
 
 const fileInput = ref(null);
-const streamView = ref(null);
 const selectedFiles = ref([]);
 const cases = ref([]);
-const logs = ref([]);
 const historyItems = ref([]);
 const apiRunHistory = ref([]);
 const downloadUrl = ref("");
@@ -789,7 +775,6 @@ const isOpenApiImporting = ref(false);
 const caseExecutionMap = ref({});
 const executingCaseId = ref("");
 let toastTimer = null;
-let logCounter = 0;
 
 const visibleCases = computed(() => {
   const keyword = searchText.value.trim().toLowerCase();
@@ -946,7 +931,6 @@ async function startGeneration() {
     await readSseStream(response.body);
   } catch (error) {
     statusText.value = "生成失败";
-    appendLog(error.message || String(error));
     showToast(error.message || "生成失败");
   } finally {
     isGenerating.value = false;
@@ -956,7 +940,6 @@ async function startGeneration() {
 function prepareGenerationState() {
   isGenerating.value = true;
   cases.value = [];
-  logs.value = [];
   downloadUrl.value = "";
   coverageReport.value = null;
   caseExecutionMap.value = {};
@@ -1016,27 +999,23 @@ function processSseBlock(block) {
 function handleEvent(eventName, data) {
   if (eventName === "status" || eventName === "thought") {
     statusText.value = data.text || "生成中";
-    appendLog(data.text || "");
     progress.value = Math.min(86, 12 + cases.value.length * 4);
     return;
   }
 
   if (eventName === "case") {
     cases.value.push(data);
-    appendLog(`生成 ${data.id || ""}：${data.title || ""}`);
     progress.value = Math.min(92, 18 + cases.value.length * 4);
     return;
   }
 
   if (eventName === "cases") {
     cases.value = data.items || cases.value;
-    appendLog("用例质量评分已更新。");
     return;
   }
 
   if (eventName === "coverage") {
     coverageReport.value = data;
-    appendLog("覆盖率矩阵已生成。");
     return;
   }
 
@@ -1045,10 +1024,6 @@ function handleEvent(eventName, data) {
     coverageReport.value = data.coverageReport || coverageReport.value;
     statusText.value = `完成，已保存 ${data.count || cases.value.length} 条`;
     progress.value = 100;
-    appendLog("Excel 已生成。");
-    if (data.historyStatus === "saved") {
-      appendLog("历史记录已保存到 MySQL。");
-    }
     fetchDatabaseStatus();
     fetchHistory();
     return;
@@ -1056,25 +1031,8 @@ function handleEvent(eventName, data) {
 
   if (eventName === "error") {
     statusText.value = "生成失败";
-    appendLog(data.message || "生成失败");
     showToast(data.message || "生成失败");
   }
-}
-
-function appendLog(text) {
-  if (!text) {
-    return;
-  }
-  logs.value.push({
-    id: `${Date.now()}-${logCounter++}`,
-    time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-    text,
-  });
-  nextTick(() => {
-    if (streamView.value) {
-      streamView.value.scrollTop = streamView.value.scrollHeight;
-    }
-  });
 }
 
 function resetAll() {
@@ -1085,7 +1043,6 @@ function resetAll() {
   });
   selectedFiles.value = [];
   cases.value = [];
-  logs.value = [];
   downloadUrl.value = "";
   coverageReport.value = null;
   caseExecutionMap.value = {};
@@ -1115,7 +1072,7 @@ async function importOpenApi() {
   }
 
   isOpenApiImporting.value = true;
-  statusText.value = "导入 OpenAPI";
+  statusText.value = "导入 Swagger";
   try {
     const response = await fetch(apiUrl("/api/openapi/import"), {
       method: "POST",
@@ -1138,15 +1095,13 @@ async function importOpenApi() {
       caseCount: data.caseCount,
     };
     downloadUrl.value = data.downloadUrl || "";
-    statusText.value = `OpenAPI 已生成 ${cases.value.length} 条`;
+    statusText.value = `Swagger 已生成 ${cases.value.length} 条`;
     progress.value = 100;
     activeView.value = "cards";
-    appendLog(`OpenAPI 导入完成：${data.operationCount || 0} 个接口，${cases.value.length} 条用例。`);
     fetchHistory();
     showToast("OpenAPI 用例已生成。");
   } catch (error) {
     showToast(error.message || "OpenAPI 导入失败");
-    appendLog(error.message || "OpenAPI 导入失败");
   } finally {
     isOpenApiImporting.value = false;
   }
@@ -1231,9 +1186,6 @@ async function runApiTest() {
 
     const data = await response.json();
     apiRunResult.value = data;
-    if (data.failureAnalysis && !data.passed) {
-      appendLog(`失败分析：${data.failureAnalysis.summary}`);
-    }
     showToast(data.passed ? "接口测试执行通过。" : "接口测试执行未通过。");
     fetchApiRunHistory();
   } catch (error) {
@@ -1429,7 +1381,6 @@ async function loadHistoryDetail(sessionId) {
     statusText.value = `已加载历史 ${cases.value.length} 条`;
     progress.value = cases.value.length ? 100 : 0;
     activeView.value = "cards";
-    appendLog(`已加载历史记录：${sessionId}`);
   } catch (error) {
     showToast(error.message || "读取历史记录失败");
   }
