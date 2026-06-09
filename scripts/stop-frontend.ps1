@@ -1,4 +1,4 @@
-# 这个脚本负责关闭占用前端端口的进程，并释放 Vue 开发服务端口。
+# Stops frontend processes that are holding the UI port.
 param(
     [string]$HostAddress = "127.0.0.1",
     [int]$Port = 5173

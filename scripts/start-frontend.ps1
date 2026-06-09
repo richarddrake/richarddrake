@@ -1,4 +1,4 @@
-# 这个脚本负责检查前端端口、安装依赖并启动 Vue 开发服务器。
+# Starts the Vue frontend and checks for port conflicts.
 param(
     [string]$HostAddress = "127.0.0.1",
     [int]$Port = 5173,
