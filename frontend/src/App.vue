@@ -16,8 +16,8 @@
           工作台
         </a>
         <a class="nav-item" href="#resultTitle">
-          <BarChart3 aria-hidden="true" />
-          用例矩阵
+          <Zap aria-hidden="true" />
+          用例生成
         </a>
         <a class="nav-item" href="#openApiTitle">
           <Network aria-hidden="true" />
@@ -27,32 +27,19 @@
           <PlayCircle aria-hidden="true" />
           接口执行
         </a>
+        <a class="nav-item" href="#reportTitle" @click="fetchApiRunHistory">
+          <BarChart3 aria-hidden="true" />
+          报告中心
+        </a>
+        <a class="nav-item" href="#defectTitle" @click="syncDefectCandidates">
+          <AlertTriangle aria-hidden="true" />
+          缺陷跟踪
+        </a>
         <a class="nav-item" href="#historyTitle" @click="refreshHistory">
           <History aria-hidden="true" />
           历史记录
         </a>
-        <a class="nav-item" href="#downloadButton">
-          <FileDown aria-hidden="true" />
-          Excel 导出
-        </a>
       </nav>
-
-      <div class="side-card">
-        <span class="side-card-label">MODEL LINK</span>
-        <strong>OpenAI-compatible</strong>
-        <p>支持图片、表格、文档、文本、链接、MySQL 历史记录与本地演示回退。</p>
-      </div>
-
-      <div class="side-metrics">
-        <div>
-          <span>Coverage</span>
-          <strong>P0-P3</strong>
-        </div>
-        <div>
-          <span>Mode</span>
-          <strong>SSE</strong>
-        </div>
-      </div>
     </aside>
 
     <main class="main-shell">
@@ -88,10 +75,267 @@
         </div>
       </section>
 
+      <section class="workspace">
+        <section class="panel composer-panel" aria-labelledby="inputTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Step 01</p>
+              <h2 id="inputTitle">工作台</h2>
+            </div>
+            <span class="step-chip">01</span>
+          </div>
+
+          <input
+            ref="fileInput"
+            id="fileInput"
+            class="sr-only"
+            type="file"
+            accept="image/*,.xlsx,.xlsm,.xls,.csv,.tsv,.txt,.md,.markdown,.json,.yaml,.yml,.log,.feature,.html,.htm,.docx,.pdf"
+            multiple
+            @change="handleFileChange"
+          />
+          <label
+            class="upload-zone"
+            :class="{ dragging: isDragging }"
+            for="fileInput"
+            @dragenter.prevent="isDragging = true"
+            @dragover.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            @drop.prevent="handleDrop"
+          >
+            <span class="upload-icon" aria-hidden="true">
+              <Upload />
+            </span>
+            <span class="upload-title">上传图片、Excel、Word、PDF、CSV 或文本材料</span>
+            <span class="upload-subtitle">图片会作为视觉输入，文档和表格会先抽取文本</span>
+          </label>
+
+          <div class="material-hints" aria-label="支持的材料类型">
+            <span>图片</span>
+            <span>Excel/CSV</span>
+            <span>Word/PDF</span>
+            <span>TXT/MD/JSON</span>
+            <span>飞书链接</span>
+          </div>
+
+          <div class="preview-grid" aria-live="polite">
+            <figure v-for="(item, index) in selectedFiles" :key="item.key" class="preview-card">
+              <div class="file-thumb" :class="{ 'file-thumb-generic': !item.isImage }">
+                <img v-if="item.isImage" :src="item.url" :alt="item.file.name" />
+                <span class="file-badge">{{ item.isImage ? "IMG" : item.extension }}</span>
+              </div>
+              <figcaption>{{ item.file.name }} · {{ formatFileSize(item.file.size) }}</figcaption>
+              <button type="button" aria-label="移除图片" title="移除图片" @click="removeFile(index)">
+                <X aria-hidden="true" />
+              </button>
+            </figure>
+          </div>
+
+          <div class="field-group">
+            <label for="requirements">用户要求</label>
+            <textarea id="requirements" v-model="requirements" rows="6" placeholder="例如：重点覆盖登录、审批流、异常回退、权限和移动端兼容性"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label for="context">上下文背景</label>
+            <textarea id="context" v-model="context" rows="6" placeholder="例如：系统面向企业内部用户，流程包含发起、主管审批、财务复核和归档"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label for="references">外部文档 / 飞书链接</label>
+            <textarea id="references" v-model="references" rows="4" placeholder="粘贴飞书文档、知识库、PRD、接口文档链接；私有文档建议同时导出 Word/PDF/Excel 上传，或把关键内容粘贴到上下文背景中"></textarea>
+          </div>
+
+          <div class="composer-actions">
+            <button class="secondary-button" type="button" :disabled="isGenerating" @click="resetAll">
+              <Trash2 aria-hidden="true" />
+              清空
+            </button>
+            <button class="primary-button" type="button" :disabled="isGenerating" @click="startGeneration">
+              <Zap aria-hidden="true" />
+              生成用例
+            </button>
+          </div>
+        </section>
+
+        <section class="panel result-panel" aria-labelledby="resultTitle">
+          <div class="panel-heading result-heading">
+            <div>
+              <p class="eyebrow">Step 02</p>
+              <h2 id="resultTitle">用例生成</h2>
+            </div>
+            <div class="result-actions">
+              <button class="icon-button" type="button" aria-label="复制用例 JSON" title="复制用例 JSON" :disabled="!cases.length" @click="copyCases">
+                <Copy aria-hidden="true" />
+              </button>
+              <button class="download-button" type="button" :disabled="!downloadUrl" @click="downloadExcel">
+                <Download aria-hidden="true" />
+                Excel
+              </button>
+            </div>
+          </div>
+
+          <div class="status-strip">
+            <div class="status-item">
+              <span class="status-label">状态</span>
+              <strong>{{ statusText }}</strong>
+            </div>
+            <div class="status-item">
+              <span class="status-label">用例</span>
+              <strong>{{ cases.length }}</strong>
+            </div>
+            <div class="status-item">
+              <span class="status-label">优先级</span>
+              <strong>{{ priorityMix }}</strong>
+            </div>
+            <div class="status-item">
+              <span class="status-label">质量均分</span>
+              <strong>{{ coverageReport?.averageQualityScore ?? "-" }}</strong>
+            </div>
+            <div class="status-item">
+              <span class="status-label">可执行</span>
+              <strong>{{ coverageReport?.automationReady ?? executableCaseCount }}/{{ cases.length || 0 }}</strong>
+            </div>
+          </div>
+
+          <div class="progress-track" aria-hidden="true">
+            <span :style="{ width: `${progress}%` }"></span>
+          </div>
+
+          <div v-if="coverageReport" class="coverage-panel">
+            <div class="coverage-head">
+              <span class="side-card-label">COVERAGE MATRIX</span>
+              <strong>{{ Math.round((coverageReport.automationRatio || 0) * 100) }}% 自动化就绪</strong>
+            </div>
+            <div class="coverage-grid">
+              <div v-for="item in coverageCards" :key="item.key" class="coverage-card">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.covered }}/{{ coverageReport.totalCases || 0 }}</strong>
+                <div class="coverage-bar" aria-hidden="true"><i :style="{ width: `${item.percent}%` }"></i></div>
+              </div>
+            </div>
+            <div v-if="(coverageReport.risks || []).length" class="risk-strip">
+              <AlertTriangle aria-hidden="true" />
+              <span>{{ coverageReport.risks.slice(0, 2).join("；") }}</span>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <div class="search-box">
+              <Search aria-hidden="true" />
+              <input v-model="searchText" type="search" placeholder="搜索模块、标题、标签" />
+            </div>
+            <div class="segmented" role="tablist" aria-label="结果视图">
+              <button class="tab-button" :class="{ active: activeView === 'cards' }" type="button" @click="activeView = 'cards'">卡片</button>
+              <button class="tab-button" :class="{ active: activeView === 'table' }" type="button" @click="activeView = 'table'">表格</button>
+            </div>
+          </div>
+
+          <div class="view-stack">
+            <div class="case-grid" :class="{ active: activeView === 'cards' }">
+              <div v-if="!visibleCases.length" class="empty-state">{{ cases.length ? "没有匹配的用例" : "等待生成" }}</div>
+              <article v-for="item in visibleCases" :key="item.id || item.title" class="case-card">
+                <header>
+                  <div class="case-meta">
+                    <span class="pill" :class="priorityClass(item.priority)">{{ item.priority || "P1" }}</span>
+                    <span class="pill">{{ item.id || "" }}</span>
+                    <span class="pill">{{ item.case_type || "功能" }}</span>
+                    <span v-if="item.quality?.score" class="pill quality-pill">Q{{ item.quality.score }}</span>
+                    <span v-if="caseApiConfig(item)" class="pill api-ready-pill">API</span>
+                  </div>
+                  <h3>{{ item.title || "未命名用例" }}</h3>
+                  <div class="pill">{{ item.module || "核心流程" }}</div>
+                </header>
+                <section v-if="item.scenario" class="case-section">
+                  <h4>场景</h4>
+                  <p>{{ item.scenario }}</p>
+                </section>
+                <section v-if="toList(item.steps).length" class="case-section">
+                  <h4>步骤</h4>
+                  <ol>
+                    <li v-for="step in toList(item.steps)" :key="step">{{ step }}</li>
+                  </ol>
+                </section>
+                <section v-if="toList(item.expected_results).length" class="case-section">
+                  <h4>预期</h4>
+                  <ul>
+                    <li v-for="result in toList(item.expected_results)" :key="result">{{ result }}</li>
+                  </ul>
+                </section>
+                <section v-if="caseApiConfig(item)" class="case-section case-api-section">
+                  <h4>接口</h4>
+                  <div class="case-api-line">
+                    <code>{{ caseApiConfig(item).method }} {{ caseApiConfig(item).url }}</code>
+                    <button class="mini-run-button" type="button" :disabled="executingCaseId === item.id" @click="executeGeneratedCase(item)">
+                      <PlayCircle aria-hidden="true" />
+                      {{ executingCaseId === item.id ? "执行中" : "执行" }}
+                    </button>
+                  </div>
+                  <div v-if="caseExecutionMap[item.id]" class="case-execution" :class="{ passed: caseExecutionMap[item.id].passed }">
+                    <span>{{ caseExecutionMap[item.id].passed ? "通过" : "未通过" }}</span>
+                    <strong>HTTP {{ caseExecutionMap[item.id].response?.statusCode ?? "-" }} · {{ caseExecutionMap[item.id].response?.durationMs ?? 0 }} ms</strong>
+                  </div>
+                  <div v-if="caseExecutionMap[item.id]?.failureAnalysis && !caseExecutionMap[item.id].passed" class="failure-analysis">
+                    <strong>{{ caseExecutionMap[item.id].failureAnalysis.summary }}</strong>
+                    <span>{{ (caseExecutionMap[item.id].failureAnalysis.nextSteps || []).slice(0, 2).join("；") }}</span>
+                  </div>
+                </section>
+                <section v-if="item.quality?.suggestions?.length" class="case-section quality-section">
+                  <h4>质量建议</h4>
+                  <ul>
+                    <li v-for="tip in item.quality.suggestions.slice(0, 2)" :key="tip">{{ tip }}</li>
+                  </ul>
+                </section>
+              </article>
+            </div>
+
+            <div class="table-wrap" :class="{ active: activeView === 'table' }">
+              <table>
+                <thead>
+                  <tr>
+                    <th>编号</th>
+                    <th>模块</th>
+                    <th>标题</th>
+                    <th>优先级</th>
+                    <th>类型</th>
+                    <th>质量</th>
+                    <th>接口</th>
+                    <th>步骤</th>
+                    <th>预期结果</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in visibleCases" :key="`row-${item.id || item.title}`">
+                    <td>{{ item.id || "" }}</td>
+                    <td>{{ item.module || "" }}</td>
+                    <td>{{ item.title || "" }}</td>
+                    <td><span class="pill" :class="priorityClass(item.priority)">{{ item.priority || "" }}</span></td>
+                    <td>{{ item.case_type || "" }}</td>
+                    <td>{{ item.quality?.score ?? "-" }}</td>
+                    <td>{{ caseApiConfig(item)?.method || "-" }}</td>
+                    <td>
+                      <template v-for="(step, index) in toList(item.steps)" :key="step">
+                        {{ index + 1 }}. {{ step }}<br />
+                      </template>
+                    </td>
+                    <td>
+                      <template v-for="(result, index) in toList(item.expected_results)" :key="result">
+                        {{ index + 1 }}. {{ result }}<br />
+                      </template>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </section>
+      </section>
+
       <section class="panel openapi-panel" aria-labelledby="openApiTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Swagger Import</p>
+            <p class="eyebrow">Step 03</p>
             <h2 id="openApiTitle">Swagger 导入</h2>
           </div>
           <div class="result-actions">
@@ -144,8 +388,8 @@
       <section class="panel api-runner-panel" aria-labelledby="apiRunnerTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Execution Node</p>
-            <h2 id="apiRunnerTitle">接口测试执行</h2>
+            <p class="eyebrow">Step 04</p>
+            <h2 id="apiRunnerTitle">接口执行</h2>
           </div>
           <div class="result-actions">
             <button class="icon-button" type="button" aria-label="刷新接口执行历史" title="刷新接口执行历史" :disabled="isApiHistoryLoading" @click="fetchApiRunHistory">
@@ -359,267 +603,149 @@
         </div>
       </section>
 
-      <section class="workspace">
-        <section class="panel composer-panel" aria-labelledby="inputTitle">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Input Node</p>
-              <h2 id="inputTitle">输入材料</h2>
+      <section class="panel report-panel" aria-labelledby="reportTitle">
+        <div class="panel-heading result-heading">
+          <div>
+            <p class="eyebrow">Step 05</p>
+            <h2 id="reportTitle">报告中心</h2>
+          </div>
+          <span class="step-chip">05</span>
+        </div>
+
+        <div class="report-grid">
+          <div class="report-summary-grid">
+            <div v-for="item in reportSummaryCards" :key="item.label" class="report-summary-card">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+              <small>{{ item.hint }}</small>
             </div>
-            <span class="step-chip">01</span>
           </div>
 
-          <input
-            ref="fileInput"
-            id="fileInput"
-            class="sr-only"
-            type="file"
-            accept="image/*,.xlsx,.xlsm,.xls,.csv,.tsv,.txt,.md,.markdown,.json,.yaml,.yml,.log,.feature,.html,.htm,.docx,.pdf"
-            multiple
-            @change="handleFileChange"
-          />
-          <label
-            class="upload-zone"
-            :class="{ dragging: isDragging }"
-            for="fileInput"
-            @dragenter.prevent="isDragging = true"
-            @dragover.prevent="isDragging = true"
-            @dragleave.prevent="isDragging = false"
-            @drop.prevent="handleDrop"
-          >
-            <span class="upload-icon" aria-hidden="true">
-              <Upload />
-            </span>
-            <span class="upload-title">上传图片、Excel、Word、PDF、CSV 或文本材料</span>
-            <span class="upload-subtitle">图片会作为视觉输入，文档和表格会先抽取文本</span>
-          </label>
-
-          <div class="material-hints" aria-label="支持的材料类型">
-            <span>图片</span>
-            <span>Excel/CSV</span>
-            <span>Word/PDF</span>
-            <span>TXT/MD/JSON</span>
-            <span>飞书链接</span>
+          <div class="report-side-stack">
+            <div class="report-focus-card">
+              <span class="side-card-label">执行概览</span>
+              <strong>{{ reportOverviewText }}</strong>
+              <p>{{ reportOverviewHint }}</p>
+            </div>
+            <div class="report-focus-card">
+              <span class="side-card-label">覆盖风险</span>
+              <strong>{{ (coverageReport?.risks || []).length }} 项</strong>
+              <p>{{ reportRiskText }}</p>
+            </div>
           </div>
+        </div>
 
-          <div class="preview-grid" aria-live="polite">
-            <figure v-for="(item, index) in selectedFiles" :key="item.key" class="preview-card">
-              <div class="file-thumb" :class="{ 'file-thumb-generic': !item.isImage }">
-                <img v-if="item.isImage" :src="item.url" :alt="item.file.name" />
-                <span class="file-badge">{{ item.isImage ? "IMG" : item.extension }}</span>
+        <div class="report-run-list">
+          <div class="report-list-heading">
+            <span class="side-card-label">RECENT RUNS</span>
+            <strong>{{ recentReportRuns.length }} 条</strong>
+          </div>
+          <div v-if="recentReportRuns.length" class="report-run-grid">
+            <article v-for="item in recentReportRuns" :key="item.runId || item.createdAt || item.name" class="report-run-card" :class="{ failed: item.passed === false }">
+              <div class="report-run-head">
+                <span class="pill" :class="item.passed ? 'run-pass' : 'run-fail'">{{ item.passed ? "PASS" : "FAIL" }}</span>
+                <span class="pill">{{ runTypeLabel(item.runType) }}</span>
               </div>
-              <figcaption>{{ item.file.name }} · {{ formatFileSize(item.file.size) }}</figcaption>
-              <button type="button" aria-label="移除图片" title="移除图片" @click="removeFile(index)">
-                <X aria-hidden="true" />
-              </button>
-            </figure>
+              <strong>{{ item.name || `${item.request?.method || ""} ${item.request?.url || ""}` }}</strong>
+              <p>{{ item.request?.method || "-" }} {{ item.request?.url || "-" }}</p>
+              <small>{{ formatDate(item.createdAt) }} · {{ item.response?.durationMs ?? 0 }} ms · HTTP {{ item.response?.statusCode ?? "-" }}</small>
+            </article>
           </div>
+          <div v-else class="empty-state report-empty">等待接口执行后汇总报告</div>
+        </div>
+      </section>
 
-          <div class="field-group">
-            <label for="requirements">用户要求</label>
-            <textarea id="requirements" v-model="requirements" rows="6" placeholder="例如：重点覆盖登录、审批流、异常回退、权限和移动端兼容性"></textarea>
+      <section class="panel defect-panel" aria-labelledby="defectTitle">
+        <div class="panel-heading result-heading">
+          <div>
+            <p class="eyebrow">Step 06</p>
+            <h2 id="defectTitle">缺陷跟踪</h2>
           </div>
-
-          <div class="field-group">
-            <label for="context">上下文背景</label>
-            <textarea id="context" v-model="context" rows="6" placeholder="例如：系统面向企业内部用户，流程包含发起、主管审批、财务复核和归档"></textarea>
-          </div>
-
-          <div class="field-group">
-            <label for="references">外部文档 / 飞书链接</label>
-            <textarea id="references" v-model="references" rows="4" placeholder="粘贴飞书文档、知识库、PRD、接口文档链接；私有文档建议同时导出 Word/PDF/Excel 上传，或把关键内容粘贴到上下文背景中"></textarea>
-          </div>
-
-          <div class="composer-actions">
-            <button class="secondary-button" type="button" :disabled="isGenerating" @click="resetAll">
-              <Trash2 aria-hidden="true" />
-              清空
-            </button>
-            <button class="primary-button" type="button" :disabled="isGenerating" @click="startGeneration">
-              <Zap aria-hidden="true" />
-              生成用例
+          <div class="result-actions">
+            <button class="secondary-button" type="button" :disabled="!defectItems.length" @click="syncDefectCandidates">
+              <RefreshCw aria-hidden="true" />
+              同步失败项
             </button>
           </div>
-        </section>
+        </div>
 
-        <section class="panel result-panel" aria-labelledby="resultTitle">
-          <div class="panel-heading result-heading">
-            <div>
-              <p class="eyebrow">Output Matrix</p>
-              <h2 id="resultTitle">生成结果</h2>
-            </div>
-            <div class="result-actions">
-              <button class="icon-button" type="button" aria-label="复制用例 JSON" title="复制用例 JSON" :disabled="!cases.length" @click="copyCases">
-                <Copy aria-hidden="true" />
-              </button>
-              <button id="downloadButton" class="download-button" type="button" :disabled="!downloadUrl" @click="downloadExcel">
-                <Download aria-hidden="true" />
-                Excel
-              </button>
-            </div>
+        <div class="defect-toolbar">
+          <div class="database-status" :class="{ connected: defectOpenCount === 0 }">
+            <AlertTriangle aria-hidden="true" />
+            <span>{{ defectToolbarText }}</span>
           </div>
+        </div>
 
-          <div class="status-strip">
-            <div class="status-item">
-              <span class="status-label">状态</span>
-              <strong>{{ statusText }}</strong>
+        <div v-if="defectItems.length" class="defect-grid">
+          <article v-for="item in defectItems" :key="item.id" class="defect-card" :class="`severity-${item.severity}`">
+            <header>
+              <div>
+                <span class="side-card-label">{{ item.source }}</span>
+                <h3>{{ item.title }}</h3>
+              </div>
+              <span class="pill" :class="defectStatusClass(item.status)">{{ defectStatusLabel(item.status) }}</span>
+            </header>
+            <p>{{ item.summary }}</p>
+            <div class="defect-meta">
+              <span>{{ item.createdAt ? formatDate(item.createdAt) : "无时间" }}</span>
+              <span>{{ item.requestLabel || "无请求信息" }}</span>
             </div>
-            <div class="status-item">
-              <span class="status-label">用例</span>
-              <strong>{{ cases.length }}</strong>
-            </div>
-            <div class="status-item">
-              <span class="status-label">优先级</span>
-              <strong>{{ priorityMix }}</strong>
-            </div>
-            <div class="status-item">
-              <span class="status-label">质量均分</span>
-              <strong>{{ coverageReport?.averageQualityScore ?? "-" }}</strong>
-            </div>
-            <div class="status-item">
-              <span class="status-label">可执行</span>
-              <strong>{{ coverageReport?.automationReady ?? executableCaseCount }}/{{ cases.length || 0 }}</strong>
-            </div>
-          </div>
 
-          <div class="progress-track" aria-hidden="true">
-            <span :style="{ width: `${progress}%` }"></span>
-          </div>
-
-          <div v-if="coverageReport" class="coverage-panel">
-            <div class="coverage-head">
-              <span class="side-card-label">COVERAGE MATRIX</span>
-              <strong>{{ Math.round((coverageReport.automationRatio || 0) * 100) }}% 自动化就绪</strong>
-            </div>
-            <div class="coverage-grid">
-              <div v-for="item in coverageCards" :key="item.key" class="coverage-card">
-                <span>{{ item.label }}</span>
-                <strong>{{ item.covered }}/{{ coverageReport.totalCases || 0 }}</strong>
-                <div class="coverage-bar" aria-hidden="true"><i :style="{ width: `${item.percent}%` }"></i></div>
+            <div class="defect-controls">
+              <div class="field-group compact-field">
+                <label :for="`defect-status-${item.id}`">状态</label>
+                <select :id="`defect-status-${item.id}`" class="select-input" :value="item.status" @change="updateDefectRecord(item.id, 'status', $event.target.value)">
+                  <option value="open">待处理</option>
+                  <option value="in_progress">处理中</option>
+                  <option value="resolved">已解决</option>
+                </select>
+              </div>
+              <div class="field-group compact-field">
+                <label :for="`defect-severity-${item.id}`">优先级</label>
+                <select :id="`defect-severity-${item.id}`" class="select-input" :value="item.severity" @change="updateDefectRecord(item.id, 'severity', $event.target.value)">
+                  <option value="high">高</option>
+                  <option value="medium">中</option>
+                  <option value="low">低</option>
+                </select>
               </div>
             </div>
-            <div v-if="(coverageReport.risks || []).length" class="risk-strip">
-              <AlertTriangle aria-hidden="true" />
-              <span>{{ coverageReport.risks.slice(0, 2).join("；") }}</span>
-            </div>
-          </div>
 
-          <div class="toolbar">
-            <div class="search-box">
-              <Search aria-hidden="true" />
-              <input v-model="searchText" type="search" placeholder="搜索模块、标题、标签" />
-            </div>
-            <div class="segmented" role="tablist" aria-label="结果视图">
-              <button class="tab-button" :class="{ active: activeView === 'cards' }" type="button" @click="activeView = 'cards'">卡片</button>
-              <button class="tab-button" :class="{ active: activeView === 'table' }" type="button" @click="activeView = 'table'">表格</button>
-            </div>
-          </div>
-
-          <div class="view-stack">
-            <div class="case-grid" :class="{ active: activeView === 'cards' }">
-              <div v-if="!visibleCases.length" class="empty-state">{{ cases.length ? "没有匹配的用例" : "等待生成" }}</div>
-              <article v-for="item in visibleCases" :key="item.id || item.title" class="case-card">
-                <header>
-                  <div class="case-meta">
-                    <span class="pill" :class="priorityClass(item.priority)">{{ item.priority || "P1" }}</span>
-                    <span class="pill">{{ item.id || "" }}</span>
-                    <span class="pill">{{ item.case_type || "功能" }}</span>
-                    <span v-if="item.quality?.score" class="pill quality-pill">Q{{ item.quality.score }}</span>
-                    <span v-if="caseApiConfig(item)" class="pill api-ready-pill">API</span>
-                  </div>
-                  <h3>{{ item.title || "未命名用例" }}</h3>
-                  <div class="pill">{{ item.module || "核心流程" }}</div>
-                </header>
-                <section v-if="item.scenario" class="case-section">
-                  <h4>场景</h4>
-                  <p>{{ item.scenario }}</p>
-                </section>
-                <section v-if="toList(item.steps).length" class="case-section">
-                  <h4>步骤</h4>
-                  <ol>
-                    <li v-for="step in toList(item.steps)" :key="step">{{ step }}</li>
-                  </ol>
-                </section>
-                <section v-if="toList(item.expected_results).length" class="case-section">
-                  <h4>预期</h4>
-                  <ul>
-                    <li v-for="result in toList(item.expected_results)" :key="result">{{ result }}</li>
-                  </ul>
-                </section>
-                <section v-if="caseApiConfig(item)" class="case-section case-api-section">
-                  <h4>接口</h4>
-                  <div class="case-api-line">
-                    <code>{{ caseApiConfig(item).method }} {{ caseApiConfig(item).url }}</code>
-                    <button class="mini-run-button" type="button" :disabled="executingCaseId === item.id" @click="executeGeneratedCase(item)">
-                      <PlayCircle aria-hidden="true" />
-                      {{ executingCaseId === item.id ? "执行中" : "执行" }}
-                    </button>
-                  </div>
-                  <div v-if="caseExecutionMap[item.id]" class="case-execution" :class="{ passed: caseExecutionMap[item.id].passed }">
-                    <span>{{ caseExecutionMap[item.id].passed ? "通过" : "未通过" }}</span>
-                    <strong>HTTP {{ caseExecutionMap[item.id].response?.statusCode ?? "-" }} · {{ caseExecutionMap[item.id].response?.durationMs ?? 0 }} ms</strong>
-                  </div>
-                  <div v-if="caseExecutionMap[item.id]?.failureAnalysis && !caseExecutionMap[item.id].passed" class="failure-analysis">
-                    <strong>{{ caseExecutionMap[item.id].failureAnalysis.summary }}</strong>
-                    <span>{{ (caseExecutionMap[item.id].failureAnalysis.nextSteps || []).slice(0, 2).join("；") }}</span>
-                  </div>
-                </section>
-                <section v-if="item.quality?.suggestions?.length" class="case-section quality-section">
-                  <h4>质量建议</h4>
-                  <ul>
-                    <li v-for="tip in item.quality.suggestions.slice(0, 2)" :key="tip">{{ tip }}</li>
-                  </ul>
-                </section>
-              </article>
+            <div class="field-group compact-field">
+              <label :for="`defect-owner-${item.id}`">负责人</label>
+              <input :id="`defect-owner-${item.id}`" class="text-input" type="text" :value="item.owner" placeholder="填写处理人" @change="updateDefectRecord(item.id, 'owner', $event.target.value)" />
             </div>
 
-            <div class="table-wrap" :class="{ active: activeView === 'table' }">
-              <table>
-                <thead>
-                  <tr>
-                    <th>编号</th>
-                    <th>模块</th>
-                    <th>标题</th>
-                    <th>优先级</th>
-                    <th>类型</th>
-                    <th>质量</th>
-                    <th>接口</th>
-                    <th>步骤</th>
-                    <th>预期结果</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in visibleCases" :key="`row-${item.id || item.title}`">
-                    <td>{{ item.id || "" }}</td>
-                    <td>{{ item.module || "" }}</td>
-                    <td>{{ item.title || "" }}</td>
-                    <td><span class="pill" :class="priorityClass(item.priority)">{{ item.priority || "" }}</span></td>
-                    <td>{{ item.case_type || "" }}</td>
-                    <td>{{ item.quality?.score ?? "-" }}</td>
-                    <td>{{ caseApiConfig(item)?.method || "-" }}</td>
-                    <td>
-                      <template v-for="(step, index) in toList(item.steps)" :key="step">
-                        {{ index + 1 }}. {{ step }}<br />
-                      </template>
-                    </td>
-                    <td>
-                      <template v-for="(result, index) in toList(item.expected_results)" :key="result">
-                        {{ index + 1 }}. {{ result }}<br />
-                      </template>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div class="field-group compact-field">
+              <label :for="`defect-note-${item.id}`">跟踪备注</label>
+              <textarea :id="`defect-note-${item.id}`" rows="4" spellcheck="false" :value="item.note" placeholder="记录定位结果、复现条件、修复进度" @change="updateDefectRecord(item.id, 'note', $event.target.value)"></textarea>
             </div>
 
-          </div>
-        </section>
+            <div v-if="item.nextSteps.length" class="defect-next-steps">
+              <strong>建议动作</strong>
+              <ul>
+                <li v-for="step in item.nextSteps.slice(0, 3)" :key="step">{{ step }}</li>
+              </ul>
+            </div>
+
+            <div class="defect-actions">
+              <button class="secondary-button" type="button" @click="updateDefectRecord(item.id, 'status', item.status === 'resolved' ? 'open' : 'resolved')">
+                <CheckCircle2 aria-hidden="true" />
+                {{ item.status === "resolved" ? "重新打开" : "标记已解决" }}
+              </button>
+              <button class="secondary-button" type="button" @click="removeDefectRecord(item.id)">
+                <Trash2 aria-hidden="true" />
+                移除
+              </button>
+            </div>
+          </article>
+        </div>
+        <div v-else class="empty-state defect-empty">当前没有待跟踪的失败项</div>
       </section>
 
       <section class="panel history-panel" aria-labelledby="historyTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">MySQL Archive</p>
+            <p class="eyebrow">Step 07</p>
             <h2 id="historyTitle">历史记录</h2>
           </div>
           <div class="result-actions">
@@ -693,7 +819,6 @@ import {
   CheckCircle2,
   Copy,
   Download,
-  FileDown,
   FileText,
   Gauge,
   Database,
@@ -713,6 +838,7 @@ import {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const MAX_CLIENT_FILE_MB = 20;
+const DEFECT_STORAGE_KEY = "ai-test-defect-tracker-v1";
 const apiMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const SUPPORTED_EXTENSIONS = new Set([
   "png",
@@ -774,6 +900,7 @@ const openApiSummary = ref({});
 const isOpenApiImporting = ref(false);
 const caseExecutionMap = ref({});
 const executingCaseId = ref("");
+const defectRecords = ref({});
 let toastTimer = null;
 
 const visibleCases = computed(() => {
@@ -838,8 +965,70 @@ const advancedConfigCount = computed(() => {
   return fields.filter((value) => String(value || "").trim() && String(value || "").trim() !== "[]" && String(value || "").trim() !== "{}").length;
 });
 
+const reportSummaryCards = computed(() => {
+  const totalRuns = apiRunHistory.value.length;
+  const passedRuns = apiRunHistory.value.filter((item) => item.passed).length;
+  const failedRuns = totalRuns - passedRuns;
+  const passRate = totalRuns ? `${Math.round((passedRuns / totalRuns) * 100)}%` : "-";
+  const averageQuality = coverageReport.value?.averageQualityScore ?? "-";
+  const automationReady = coverageReport.value?.automationReady ?? executableCaseCount.value;
+  return [
+    { label: "当前用例", value: cases.value.length || "-", hint: "当前页面中的测试用例数" },
+    { label: "可执行接口", value: executableCaseCount.value || "-", hint: "具备接口配置的用例数" },
+    { label: "执行通过率", value: passRate, hint: `${passedRuns}/${totalRuns || 0} 次执行通过` },
+    { label: "失败项", value: failedRuns || "-", hint: "需要继续跟进的执行失败数" },
+    { label: "质量均分", value: averageQuality, hint: "当前用例质量平均分" },
+    { label: "自动化就绪", value: `${automationReady}/${cases.value.length || 0}`, hint: "适合继续做自动化的用例" },
+  ];
+});
+
+const recentReportRuns = computed(() => apiRunHistory.value.slice(0, 6));
+
+const reportOverviewText = computed(() => {
+  if (!apiRunHistory.value.length) {
+    return "等待执行数据";
+  }
+  const latest = apiRunHistory.value[0];
+  const label = latest.name || `${latest.request?.method || ""} ${latest.request?.url || ""}`.trim();
+  return label || "最近一次执行";
+});
+
+const reportOverviewHint = computed(() => {
+  if (!apiRunHistory.value.length) {
+    return "先完成一轮接口执行，这里会自动汇总最近结果。";
+  }
+  const latest = apiRunHistory.value[0];
+  return `${latest.passed ? "最近一次执行通过" : "最近一次执行失败"}，耗时 ${latest.response?.durationMs ?? 0} ms。`;
+});
+
+const reportRiskText = computed(() => {
+  const risks = coverageReport.value?.risks || [];
+  if (!risks.length) {
+    return "当前没有额外风险提示。";
+  }
+  return risks.slice(0, 2).join("；");
+});
+
+const defectItems = computed(() =>
+  Object.values(defectRecords.value).sort((a, b) => {
+    const left = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    const right = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    return left - right;
+  }),
+);
+
+const defectOpenCount = computed(() => defectItems.value.filter((item) => item.status !== "resolved").length);
+
+const defectToolbarText = computed(() => {
+  if (!defectItems.value.length) {
+    return "还没有进入缺陷跟踪的失败项";
+  }
+  return `共 ${defectItems.value.length} 项失败记录，当前 ${defectOpenCount.value} 项待处理`;
+});
+
 onMounted(() => {
   document.body.classList.add("dark");
+  loadDefectRecords();
   fetchDatabaseStatus();
   fetchHistory();
   fetchApiRunHistory();
@@ -1337,6 +1526,7 @@ async function fetchApiRunHistory() {
     const response = await fetch(apiUrl("/api/api-tests/history?limit=20"));
     const data = await response.json();
     apiRunHistory.value = data.items || [];
+    syncDefectCandidates();
   } catch (error) {
     apiRunHistory.value = [];
   } finally {
@@ -1359,6 +1549,122 @@ function loadApiRun(item) {
     maxResponseMs: item.expected?.maxResponseMs ?? "",
     timeoutSeconds: 10,
   };
+}
+
+function loadDefectRecords() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    const text = window.localStorage.getItem(DEFECT_STORAGE_KEY);
+    defectRecords.value = text ? JSON.parse(text) : {};
+  } catch {
+    defectRecords.value = {};
+  }
+}
+
+function persistDefectRecords() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(DEFECT_STORAGE_KEY, JSON.stringify(defectRecords.value));
+}
+
+function syncDefectCandidates() {
+  const merged = { ...defectRecords.value };
+  const candidates = [];
+
+  apiRunHistory.value.forEach((item) => {
+    if (item?.passed === false) {
+      candidates.push(item);
+    }
+  });
+
+  Object.values(caseExecutionMap.value || {}).forEach((item) => {
+    if (item?.passed === false) {
+      candidates.push(item);
+    }
+  });
+
+  candidates.forEach((item) => {
+    const id = defectRecordId(item);
+    const existing = merged[id] || {};
+    const failure = item.failureAnalysis || {};
+    merged[id] = {
+      id,
+      title: item.caseTitle || item.name || `${item.request?.method || ""} ${item.request?.url || ""}`.trim() || "未命名失败项",
+      source: item.caseTitle ? "生成用例执行" : runTypeLabel(item.runType),
+      summary: failure.summary || item.error || item.response?.bodyPreview || "执行失败",
+      requestLabel: `${item.request?.method || "-"} ${item.request?.url || "-"}`,
+      nextSteps: Array.isArray(failure.nextSteps) ? failure.nextSteps : [],
+      createdAt: item.createdAt || existing.createdAt || "",
+      status: existing.status || "open",
+      severity: existing.severity || inferDefectSeverity(item),
+      owner: existing.owner || "",
+      note: existing.note || "",
+      updatedAt: existing.updatedAt || item.createdAt || new Date().toISOString(),
+    };
+  });
+
+  defectRecords.value = merged;
+  persistDefectRecords();
+}
+
+function defectRecordId(item) {
+  if (item.runId) {
+    return `run:${item.runId}`;
+  }
+  if (item.caseId) {
+    return `case:${item.caseId}`;
+  }
+  return `fallback:${item.name || item.caseTitle || item.request?.url || Date.now()}`;
+}
+
+function inferDefectSeverity(item) {
+  const summary = `${item.failureAnalysis?.summary || ""} ${item.error || ""}`.toLowerCase();
+  if (summary.includes("鉴权") || summary.includes("权限") || summary.includes("数据库") || summary.includes("后端")) {
+    return "high";
+  }
+  if (summary.includes("参数") || summary.includes("断言")) {
+    return "medium";
+  }
+  return "low";
+}
+
+function updateDefectRecord(id, field, value) {
+  const current = defectRecords.value[id];
+  if (!current) {
+    return;
+  }
+  defectRecords.value = {
+    ...defectRecords.value,
+    [id]: {
+      ...current,
+      [field]: value,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+  persistDefectRecords();
+}
+
+function removeDefectRecord(id) {
+  const next = { ...defectRecords.value };
+  delete next[id];
+  defectRecords.value = next;
+  persistDefectRecords();
+}
+
+function defectStatusLabel(status) {
+  const labels = {
+    open: "待处理",
+    in_progress: "处理中",
+    resolved: "已解决",
+  };
+  return labels[status] || "待处理";
+}
+
+function defectStatusClass(status) {
+  return `defect-status-${status || "open"}`;
 }
 
 function resetApiTest() {

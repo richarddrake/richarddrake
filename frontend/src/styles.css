@@ -232,62 +232,11 @@ svg {
   transform: translateX(2px);
 }
 
-.side-card {
-  align-self: end;
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--cyan), transparent 52%);
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(30, 211, 255, 0.12), transparent 58%),
-    var(--surface);
-}
-
 .side-card-label {
   display: block;
   color: var(--teal);
   font-size: 11px;
   font-weight: 850;
-}
-
-.side-card strong {
-  display: block;
-  margin-top: 7px;
-  font-size: 15px;
-}
-
-.side-card p {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.side-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.side-metrics div {
-  min-height: 58px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.side-metrics span {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 760;
-}
-
-.side-metrics strong {
-  display: block;
-  margin-top: 7px;
-  color: var(--amber);
-  font-size: 14px;
 }
 
 .main-shell {
@@ -1193,9 +1142,220 @@ td {
   box-shadow: var(--shadow);
 }
 
+.report-panel,
+.defect-panel,
 .history-panel {
   margin-top: 16px;
   padding: 18px;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.2fr) minmax(260px, 0.8fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.report-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-summary-card,
+.report-focus-card {
+  display: grid;
+  gap: 8px;
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(30, 211, 255, 0.07), transparent 62%),
+    var(--surface-strong);
+}
+
+.report-summary-card span,
+.report-focus-card .side-card-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.report-summary-card strong,
+.report-focus-card strong {
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.report-summary-card small,
+.report-focus-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.report-side-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.report-run-list {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.report-list-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.report-run-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.report-run-card {
+  display: grid;
+  gap: 8px;
+  min-height: 138px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-soft), transparent 4%);
+}
+
+.report-run-card.failed {
+  border-color: color-mix(in srgb, var(--rose), transparent 38%);
+}
+
+.report-run-head,
+.defect-meta,
+.defect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.report-run-card strong,
+.defect-card h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.report-run-card p,
+.defect-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.report-run-card small,
+.defect-meta span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.report-empty,
+.defect-empty {
+  min-height: 160px;
+}
+
+.defect-toolbar {
+  margin-bottom: 14px;
+}
+
+.defect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.defect-card {
+  display: grid;
+  gap: 12px;
+  min-height: 320px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(255, 95, 126, 0.06), transparent 64%),
+    var(--surface-strong);
+}
+
+.defect-card.severity-high {
+  border-color: color-mix(in srgb, var(--rose), transparent 30%);
+}
+
+.defect-card.severity-medium {
+  border-color: color-mix(in srgb, var(--amber), transparent 32%);
+}
+
+.defect-card.severity-low {
+  border-color: color-mix(in srgb, var(--teal), transparent 35%);
+}
+
+.defect-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.defect-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.defect-next-steps {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-soft), transparent 8%);
+}
+
+.defect-next-steps strong {
+  font-size: 13px;
+}
+
+.defect-next-steps ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.defect-next-steps li {
+  line-height: 1.5;
+}
+
+.defect-status-open {
+  color: #071016;
+  border-color: transparent;
+  background: var(--amber);
+}
+
+.defect-status-in_progress {
+  color: #071016;
+  border-color: transparent;
+  background: var(--cyan);
+}
+
+.defect-status-resolved {
+  color: #071016;
+  border-color: transparent;
+  background: var(--teal);
 }
 
 .history-toolbar {
@@ -1703,9 +1863,7 @@ td {
   }
 
   .side-brand div,
-  .nav-item,
-  .side-card,
-  .side-metrics {
+  .nav-item {
     display: none;
   }
 
@@ -1726,6 +1884,17 @@ td {
   }
 
   .history-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .report-grid,
+  .report-summary-grid,
+  .defect-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .report-run-grid,
+  .defect-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1768,11 +1937,6 @@ td {
   .nav-item {
     display: inline-flex;
     min-width: max-content;
-  }
-
-  .side-card,
-  .side-metrics {
-    display: none;
   }
 
   .main-shell {
