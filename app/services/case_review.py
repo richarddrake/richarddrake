@@ -118,7 +118,7 @@ def _case_issues(
     if _missing_core_content(case):
         issues.append("步骤或预期结果不完整")
     if readiness.get("status") == "needs_info":
-        issues.append("接口执行信息未补齐")
+        issues.append("自动化执行信息未补齐")
     issues.extend(str(item) for item in quality.get("issues") or [])
     for deduction in quality.get("deductions") or []:
         if isinstance(deduction, dict) and deduction.get("lost", 0) >= 8:
@@ -139,7 +139,10 @@ def _case_actions(
         actions.append("补充需求编号或来源章节，方便评审追溯。")
     if readiness.get("status") == "needs_info":
         missing = ", ".join(str(item) for item in readiness.get("missing") or [])
-        actions.append(f"补齐接口执行配置：{missing or 'method、url、断言'}。")
+        if readiness.get("kind") == "ui":
+            actions.append(f"补齐 UI 自动化配置：{missing or 'baseUrl、steps、locator、页面断言'}。")
+        else:
+            actions.append(f"补齐接口执行配置：{missing or 'method、url、断言'}。")
     actions.extend(str(item) for item in quality.get("suggestions") or [])
     if not actions:
         actions.append("保持当前用例结构，可进入执行或归档。")
@@ -184,7 +187,7 @@ def _recommendations(
     if duplicate_groups:
         recommendations.append("先处理重复标题或重复验证目标，避免评审时误以为覆盖充分。")
     if any(item["status"] == "blocked" for item in items):
-        recommendations.append("优先修改阻塞项，尤其是 P0/P1 用例的步骤、预期和接口执行配置。")
+        recommendations.append("优先修改阻塞项，尤其是 P0/P1 用例的步骤、预期和自动化执行配置。")
     for issue, _count in issue_counts.most_common(3):
         recommendations.append(f"集中补齐：{issue}。")
     if not recommendations and items:

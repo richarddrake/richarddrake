@@ -21,6 +21,7 @@ COVERAGE_BUCKETS = {
 }
 
 EXECUTION_HINTS = ("接口", "api", "http", "swagger", "openapi", "url", "endpoint")
+UI_EXECUTION_HINTS = ("页面", "ui", "web", "浏览器", "按钮", "输入框", "表单", "登录", "点击", "跳转", "playwright")
 
 
 def enrich_cases(cases: list[TestCase]) -> list[TestCase]:
@@ -181,8 +182,10 @@ def score_case(case: dict[str, Any], title_counts: Counter[str]) -> dict[str, An
     test_data = str(case.get("test_data") or "").strip()
     tags = _as_list(case.get("tags"))
     api_test = _as_dict(case.get("api_test") or case.get("apiTest"))
+    ui_test = _as_dict(case.get("ui_test") or case.get("uiTest"))
     readiness = assess_execution_readiness(case)
     assertions = _as_list(api_test.get("assertions")) if api_test else []
+    ui_assertions = [step for step in ui_test.get("steps", []) if isinstance(step, dict) and step.get("assertion")] if ui_test else []
     expected_status = api_test.get("expectedStatus") or api_test.get("expected_status") if api_test else None
     schema = api_test.get("jsonSchema") or api_test.get("json_schema") if api_test else None
     requirement_id = str(case.get("requirement_id") or case.get("requirementId") or "").strip()
@@ -192,7 +195,7 @@ def score_case(case: dict[str, Any], title_counts: Counter[str]) -> dict[str, An
         "expected": 20 if _has_verifiable_expected(expected) else 10 if expected else 0,
         "testData": 15 if len(test_data) >= 6 else 6 if test_data else 0,
         "coverage": 15 if len(tags) >= 2 else 8 if tags else 0,
-        "automation": _automation_score(readiness, assertions, expected_status, schema),
+        "automation": _automation_score(readiness, assertions, expected_status, schema, ui_assertions),
         "uniqueness": 10,
     }
 
@@ -216,6 +219,8 @@ def score_case(case: dict[str, Any], title_counts: Counter[str]) -> dict[str, An
     if dimensions["automation"] < 20:
         if readiness.get("kind") == "api":
             suggestions.append("如属于接口场景，补充 method、url、headers、body、assertions 和 jsonSchema。")
+        elif readiness.get("kind") == "ui":
+            suggestions.append("如属于页面自动化场景，补充 baseUrl、稳定 locator、步骤和页面断言。")
         else:
             suggestions.append("这条用例更适合作为手工测试或评审用例，可保留为非接口执行项。")
     if not requirement_id:
@@ -289,6 +294,7 @@ def _case_to_dict(case: TestCase | dict[str, Any]) -> dict[str, Any]:
 
 def assess_execution_readiness(case: dict[str, Any]) -> dict[str, Any]:
     api_test = _as_dict(case.get("api_test") or case.get("apiTest"))
+    ui_test = _as_dict(case.get("ui_test") or case.get("uiTest"))
     text = " ".join(
         [
             str(case.get("title") or ""),
@@ -298,6 +304,41 @@ def assess_execution_readiness(case: dict[str, Any]) -> dict[str, Any]:
             " ".join(_as_list(case.get("tags"))),
         ]
     ).lower()
+    is_ui_case = bool(ui_test) or any(hint in text for hint in UI_EXECUTION_HINTS)
+    if is_ui_case and not api_test:
+        steps = ui_test.get("steps") if isinstance(ui_test.get("steps"), list) else []
+        base_url = str(ui_test.get("baseUrl") or ui_test.get("base_url") or "").strip()
+        has_goto = any(isinstance(step, dict) and step.get("action") == "goto" and step.get("url") for step in steps)
+        has_assertion = any(isinstance(step, dict) and step.get("assertion") for step in steps)
+        missing: list[str] = []
+        if not ui_test:
+            missing.append("ui_test")
+        if not steps:
+            missing.append("steps")
+        if not (base_url or has_goto):
+            missing.append("baseUrl 或 goto.url")
+        if steps and not has_assertion:
+            missing.append("页面断言")
+        if missing:
+            return {
+                "kind": "ui",
+                "ready": False,
+                "status": "needs_info",
+                "label": "UI 待补齐",
+                "reason": f"已识别为页面自动化用例，但缺少 {', '.join(missing)}，暂时不能通过 Playwright 稳定执行。",
+                "missing": missing,
+                "warnings": [],
+            }
+        return {
+            "kind": "ui",
+            "ready": True,
+            "status": "ready",
+            "label": "UI 可执行",
+            "reason": "UI 步骤和页面断言已具备执行条件，可送入 Playwright 执行器。",
+            "missing": [],
+            "warnings": [],
+        }
+
     is_api_case = bool(api_test) or any(hint in text for hint in EXECUTION_HINTS)
     if not is_api_case:
         return {
@@ -344,9 +385,21 @@ def assess_execution_readiness(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _automation_score(readiness: dict[str, Any], assertions: list[Any], expected_status: Any, schema: Any) -> int:
+def _automation_score(
+    readiness: dict[str, Any],
+    assertions: list[Any],
+    expected_status: Any,
+    schema: Any,
+    ui_assertions: list[Any] | None = None,
+) -> int:
     if readiness.get("kind") == "manual":
         return 14
+    if readiness.get("kind") == "ui":
+        if readiness.get("ready") and ui_assertions:
+            return 20
+        if readiness.get("ready"):
+            return 14
+        return 4
     if readiness.get("ready") and (assertions or expected_status or schema):
         return 20
     if readiness.get("ready"):

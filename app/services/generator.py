@@ -182,14 +182,18 @@ def _build_prompt(
    event, id, module, title, priority, case_type, scenario, preconditions, steps, expected_results, test_data, tags, source, requirement_id
 5. 如果材料中包含接口、OpenAPI、Swagger、URL、接口文档或可推断接口行为，请给对应 case 增加 api_test 对象，结构如下：
    api_test.method, api_test.url, api_test.headers, api_test.body, api_test.bodyMode, api_test.expectedStatus, api_test.expectedContains, api_test.assertions, api_test.extractors, api_test.databaseAssertions, api_test.jsonSchema, api_test.variables, api_test.timeoutSeconds
-6. 如果是接口相关场景但暂时无法形成可执行 api_test，也要保留该 case，并在 scenario 或 source 中写明缺少的信息，例如缺少接口地址、鉴权方式、测试账号或前置数据。
-7. api_test.url 可以使用 {{base_url}}、{{token}} 等变量；assertions 应优先使用 status、json、header、body、time、variable 断言，并给出可验证的 expected。
-8. 对接口用例要覆盖正向、缺参、非法参数、边界、权限、重复提交、数据一致性和性能风险。
-9. preconditions、steps、expected_results、tags 必须是字符串数组。
-10. expected_results 必须可验证，尽量写成状态码、字段值、页面状态、数据库结果或明确提示。
-11. 避免重复标题；如果场景接近，也要通过触发条件、测试数据或断言点体现差异。
-12. priority 只能使用 P0、P1、P2、P3。
-13. id 使用 TC-001 这种格式。
+6. 如果材料中包含 Web 页面、表单、按钮、输入框、登录/搜索/提交/审批等页面操作场景，且可以推断稳定执行步骤，请给对应 case 增加 ui_test 对象，结构如下：
+   ui_test.baseUrl, ui_test.browser, ui_test.viewport, ui_test.variables, ui_test.steps
+   ui_test.steps 中只使用 goto、click、fill、type、press、select、check、uncheck、waitForSelector、wait、screenshot 动作，以及 visible、hidden、textVisible、urlContains、urlEquals、titleContains、textContains 断言。
+7. UI locator 优先使用 role=button[name=提交]、getByLabel:用户名、getByPlaceholder:搜索、text=保存成功、testId=submit-button；无法确认稳定 locator 时，不要臆造脆弱 CSS，在 scenario 或 source 中写明需要补齐页面定位器或测试账号。
+8. 如果是接口或 UI 自动化相关场景但暂时无法形成可执行配置，也要保留该 case，并写明缺少的信息，例如缺少接口地址、鉴权方式、页面地址、测试账号、稳定 locator 或前置数据。
+9. api_test.url 和 ui_test.steps 中的 url/value 可以使用 {{base_url}}、{{web_base_url}}、{{token}}、{{username}}、{{password}} 等变量。
+10. 对接口用例要覆盖正向、缺参、非法参数、边界、权限、重复提交、数据一致性和性能风险；对 UI 用例要覆盖页面跳转、表单校验、按钮状态、成功/失败提示和权限可见性。
+11. preconditions、steps、expected_results、tags 必须是字符串数组。
+12. expected_results 必须可验证，尽量写成状态码、字段值、页面状态、数据库结果或明确提示。
+13. 避免重复标题；如果场景接近，也要通过触发条件、测试数据或断言点体现差异。
+14. priority 只能使用 P0、P1、P2、P3。
+15. id 使用 TC-001 这种格式。
 
 示例行：
 {{"event":"thought","text":"识别到核心流程包含创建、提交、审批和结果通知。"}}

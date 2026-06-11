@@ -24,8 +24,10 @@ from app.services.database import (
     init_database,
     list_api_test_runs,
     list_history,
+    list_ui_test_runs,
     record_api_test_run,
     record_generation_session,
+    record_ui_test_run,
 )
 from app.services.excel_exporter import save_cases_to_excel
 from app.services.failure_agent import analyze_failure
@@ -33,10 +35,12 @@ from app.services.feishu_reader import build_feishu_context, fetch_feishu_refere
 from app.services.generator import GenerationEvent, generate_test_cases
 from app.services.material_parser import build_material_context, read_upload_materials
 from app.services.openapi_importer import generate_cases_from_openapi
+from app.services.ui_runner import run_ui_test
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 GENERATED_DIR = BASE_DIR / "generated"
+UI_ARTIFACTS_DIR = GENERATED_DIR / "ui-runs"
 
 
 class ApiTestRunRequest(BaseModel):
@@ -101,6 +105,23 @@ class CaseReviewRequest(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     cases: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class UiTestRunRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str = Field(default="Web UI 自动化用例", max_length=255)
+    base_url: str = Field(default="", alias="baseUrl")
+    browser: str = Field(default="chromium", max_length=32)
+    headless: bool = True
+    viewport: dict[str, Any] = Field(default_factory=dict)
+    variables: dict[str, Any] = Field(default_factory=dict)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    timeout_seconds: float = Field(default=30, alias="timeoutSeconds")
+    step_timeout_ms: float = Field(default=8000, alias="stepTimeoutMs")
+    capture_trace: bool = Field(default=True, alias="captureTrace")
+    capture_screenshot: bool = Field(default=True, alias="captureScreenshot")
+    continue_on_failure: bool = Field(default=False, alias="continueOnFailure")
 
 
 app = FastAPI(title="测试用例智能生成系统", version="1.0.0")
@@ -193,6 +214,40 @@ async def run_api_load_test_case(request: ApiLoadTestRequest) -> dict:
 @app.get("/api/api-tests/history")
 async def api_test_history(limit: int = Query(default=20, ge=1, le=100)) -> dict:
     return list_api_test_runs(limit=limit)
+
+
+@app.post("/api/ui-tests/run")
+async def run_ui_test_case(request: UiTestRunRequest) -> dict:
+    try:
+        result = await run_ui_test(request.model_dump(by_alias=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    history_status = await asyncio.to_thread(record_ui_test_run, result)
+    result["historyStatus"] = history_status
+    return result
+
+
+@app.get("/api/ui-tests/history")
+async def ui_test_history(limit: int = Query(default=20, ge=1, le=100)) -> dict:
+    return list_ui_test_runs(limit=limit)
+
+
+@app.get("/api/ui-tests/artifacts/{run_id}/{filename}")
+async def ui_test_artifact(run_id: str, filename: str) -> FileResponse:
+    safe_run_id = Path(run_id).name
+    safe_filename = Path(filename).name
+    if safe_run_id != run_id or safe_filename != filename:
+        raise HTTPException(status_code=400, detail="文件路径不合法。")
+    if not run_id.startswith("UI-") or safe_filename not in {"failure.png", "trace.zip"}:
+        raise HTTPException(status_code=400, detail="UI 自动化证据文件不合法。")
+
+    path = UI_ARTIFACTS_DIR / safe_run_id / safe_filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="证据文件不存在或已过期。")
+
+    media_type = "image/png" if safe_filename.endswith(".png") else "application/zip"
+    return FileResponse(path, media_type=media_type, filename=safe_filename)
 
 
 @app.post("/api/cases/execute")

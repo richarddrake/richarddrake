@@ -106,6 +106,26 @@ class ApiTestRun(Base):
     assertions_json = Column(JsonText, nullable=False, default="[]")
 
 
+class UiTestRun(Base):
+    __tablename__ = "ui_test_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String(80), unique=True, index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    name = Column(String(255), nullable=False, default="")
+    base_url = Column(JsonText, nullable=False, default="")
+    browser = Column(String(32), nullable=False, default="chromium")
+    duration_ms = Column(Integer, nullable=False, default=0)
+    passed = Column(Integer, nullable=False, default=0)
+    error = Column(JsonText, nullable=False, default="")
+    steps_json = Column(JsonText, nullable=False, default="[]")
+    assertions_json = Column(JsonText, nullable=False, default="[]")
+    artifacts_json = Column(JsonText, nullable=False, default="{}")
+    console_json = Column(JsonText, nullable=False, default="[]")
+    network_json = Column(JsonText, nullable=False, default="[]")
+    failure_analysis_json = Column(JsonText, nullable=False, default="{}")
+
+
 def init_database() -> bool:
     global _engine, _SessionLocal, _last_error
     if not is_database_enabled():
@@ -374,6 +394,63 @@ def list_api_test_runs(limit: int = 20) -> dict[str, Any]:
         return {"enabled": True, "connected": False, "message": str(exc), "items": []}
 
 
+def record_ui_test_run(result: dict[str, Any]) -> str:
+    if not is_database_enabled():
+        return "disabled"
+    if not init_database():
+        return "unavailable"
+
+    request = result.get("request") or {}
+    response = result.get("response") or {}
+
+    try:
+        with _SessionLocal() as db:
+            db.add(
+                UiTestRun(
+                    run_id=str(result.get("runId") or ""),
+                    created_at=_parse_iso_datetime(str(result.get("createdAt") or "")) or datetime.utcnow(),
+                    name=str(result.get("name") or ""),
+                    base_url=str(request.get("url") or ""),
+                    browser=str(request.get("browser") or "chromium"),
+                    duration_ms=_optional_int(response.get("durationMs")) or 0,
+                    passed=1 if result.get("passed") else 0,
+                    error=str(result.get("error") or ""),
+                    steps_json=_json_dumps(result.get("steps") or []),
+                    assertions_json=_json_dumps(result.get("assertions") or []),
+                    artifacts_json=_json_dumps(result.get("artifacts") or {}),
+                    console_json=_json_dumps(result.get("consoleMessages") or []),
+                    network_json=_json_dumps(result.get("networkErrors") or []),
+                    failure_analysis_json=_json_dumps(result.get("failureAnalysis") or {}),
+                )
+            )
+            db.commit()
+        return "saved"
+    except SQLAlchemyError as exc:
+        global _last_error
+        _last_error = str(exc)
+        return "failed"
+
+
+def list_ui_test_runs(limit: int = 20) -> dict[str, Any]:
+    if not is_database_enabled():
+        return {"enabled": False, "connected": False, "message": "MySQL 未启用。", "items": []}
+    if not init_database():
+        return {"enabled": True, "connected": False, "message": _last_error, "items": []}
+
+    safe_limit = max(1, min(limit, 100))
+    try:
+        with _SessionLocal() as db:
+            runs = db.query(UiTestRun).order_by(UiTestRun.created_at.desc()).limit(safe_limit).all()
+            return {
+                "enabled": True,
+                "connected": True,
+                "message": "ok",
+                "items": [_ui_run_to_dict(item) for item in runs],
+            }
+    except SQLAlchemyError as exc:
+        return {"enabled": True, "connected": False, "message": str(exc), "items": []}
+
+
 def is_database_enabled() -> bool:
     return os.getenv("DATABASE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -477,6 +554,61 @@ def _api_run_to_dict(run: ApiTestRun) -> dict[str, Any]:
         "passed": bool(run.passed),
         "error": run.error,
     }
+
+
+def _ui_run_to_dict(run: UiTestRun) -> dict[str, Any]:
+    steps = _load_json(run.steps_json, [])
+    assertions = _load_json(run.assertions_json, [])
+    artifacts = _load_json(run.artifacts_json, {})
+    console_messages = _load_json(run.console_json, [])
+    network_errors = _load_json(run.network_json, [])
+    failure_analysis = _load_json(run.failure_analysis_json, {})
+    return {
+        "runId": run.run_id,
+        "createdAt": run.created_at.isoformat() + "Z" if run.created_at else "",
+        "name": run.name,
+        "runType": "ui",
+        "request": {
+            "method": "UI",
+            "url": run.base_url,
+            "browser": run.browser,
+        },
+        "expected": {
+            "status": "page assertions",
+            "contains": "",
+        },
+        "response": {
+            "statusCode": None,
+            "durationMs": run.duration_ms,
+            "headers": {"browser": run.browser},
+            "bodyPreview": _ui_body_preview(steps, run.error),
+        },
+        "steps": steps,
+        "assertions": assertions,
+        "artifacts": artifacts,
+        "consoleMessages": console_messages,
+        "networkErrors": network_errors,
+        "failureAnalysis": failure_analysis or None,
+        "summary": {
+            "totalSteps": len(steps),
+            "executedSteps": len(steps),
+            "passedSteps": sum(1 for item in steps if item.get("passed")),
+            "failedSteps": sum(1 for item in steps if item.get("passed") is False),
+            "assertionCount": len(assertions),
+            "passedAssertions": sum(1 for item in assertions if item.get("passed")),
+            "failedAssertions": sum(1 for item in assertions if item.get("passed") is False),
+            "durationMs": run.duration_ms,
+        },
+        "passed": bool(run.passed),
+        "error": run.error,
+    }
+
+
+def _ui_body_preview(steps: list[dict[str, Any]], error: str) -> str:
+    failed = next((item for item in steps if item.get("passed") is False), None)
+    if failed:
+        return f"失败步骤：{failed.get('index')}. {failed.get('name')}\n{failed.get('message') or error}"
+    return f"执行步骤：{sum(1 for item in steps if item.get('passed'))}/{len(steps)}"
 
 
 def _build_summary(

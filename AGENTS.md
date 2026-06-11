@@ -26,6 +26,7 @@
 - `docs/MODEL_SETUP.md`
 - `docs/MYSQL_SETUP.md`
 - `docs/API_TEST_EXECUTION.md`
+- `docs/UI_AUTOMATION_PLAYWRIGHT.md`
 
 ## 默认任务规则
 
@@ -124,11 +125,12 @@ git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 pus
 3. 用例质量与覆盖率分析
 4. Swagger / OpenAPI 导入
 5. 接口测试执行
-6. 失败分析
-7. 报告中心
-8. 缺陷跟踪
-9. 历史记录与 MySQL 保存
-10. Excel / Markdown / HTML 报告导出
+6. Playwright UI 自动化执行
+7. 失败分析
+8. 报告中心
+9. 缺陷跟踪
+10. 历史记录与 MySQL 保存
+11. Excel / Markdown / HTML 报告导出
 
 ## 前端设计原则
 
@@ -136,7 +138,7 @@ git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 pus
 - 左侧导航顺序应贴近测试流程
 - 不要重新加入已经删除的独立“Excel 导出”导航
 - 不要重新加入 `MODEL LINK`、`Coverage`、`Mode` 这类突兀侧栏块
-- `用例生成`、`接口执行`、`报告中心`、`缺陷跟踪` 是当前重点模块
+- `用例生成`、`UI 自动化`、`接口执行`、`报告中心`、`缺陷跟踪` 是当前重点模块
 - UI 调整必须兼顾桌面和移动端，不允许文字明显溢出或重叠
 
 ## 后端设计原则
@@ -177,4 +179,3 @@ git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 pus
 - 不要破坏当前已可用功能
 - 不要回滚用户已有改动
 - 遇到可验证的问题，优先用命令或本地服务验证
-

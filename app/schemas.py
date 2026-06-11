@@ -55,6 +55,7 @@ class TestCase:
     source_type: str = ""
     coverage_type: str = ""
     api_test: dict[str, Any] = field(default_factory=dict)
+    ui_test: dict[str, Any] = field(default_factory=dict)
     quality: dict[str, Any] = field(default_factory=dict)
     coverage: dict[str, Any] = field(default_factory=dict)
     execution: dict[str, Any] = field(default_factory=dict)
@@ -100,6 +101,7 @@ def normalize_case(payload: dict[str, Any], index: int) -> TestCase:
         source_type=str(payload.get("source_type") or payload.get("sourceType") or ""),
         coverage_type=str(payload.get("coverage_type") or payload.get("coverageType") or ""),
         api_test=api_test,
+        ui_test=_as_dict(payload.get("ui_test") or payload.get("uiTest")),
         quality=_as_dict(payload.get("quality")),
         coverage=_as_dict(payload.get("coverage") if isinstance(payload.get("coverage"), dict) else {}),
         execution=_as_dict(payload.get("execution")),

@@ -26,6 +26,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 模型接入配置说明：[`docs/MODEL_SETUP.md`](docs/MODEL_SETUP.md)
 - MySQL 配置说明：[`docs/MYSQL_SETUP.md`](docs/MYSQL_SETUP.md)
 - 接口测试执行说明：[`docs/API_TEST_EXECUTION.md`](docs/API_TEST_EXECUTION.md)
+- Playwright UI 自动化说明：[`docs/UI_AUTOMATION_PLAYWRIGHT.md`](docs/UI_AUTOMATION_PLAYWRIGHT.md)
 
 > 维护约定：每次系统版本更新、功能迭代或能力下线后，必须同步更新 `docs/PRODUCT_REPORT.md`。
 
@@ -60,6 +61,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 支持接口失败分析 Agent，自动归类环境、鉴权、参数、断言、契约变更、后端缺陷和数据库一致性问题
 - 支持失败分析证据链、置信度、是否建议创建缺陷和是否建议更新用例
 - 支持请求/响应敏感 Header 脱敏，并支持按环境变量启用更严格的内网访问限制
+- 支持 Playwright Web UI 自动化基础执行：受控步骤 DSL、Chromium/Firefox/WebKit、页面断言、失败截图、trace 证据、UI 执行历史和报告中心汇总
 
 ## 测试报告能力
 
@@ -74,7 +76,7 @@ scripts/                   Windows 启动和端口释放脚本
 7. 用例质量分析
 8. 失败分析
 9. 缺陷跟踪
-10. 慢接口统计
+10. 慢执行统计
 11. 数据库校验结果
 12. 风险提示
 13. 测试结论
@@ -280,6 +282,9 @@ POST /api/api-tests/suite
 POST /api/api-tests/load
 POST /api/cases/execute
 GET  /api/api-tests/history?limit=20
+POST /api/ui-tests/run
+GET  /api/ui-tests/history?limit=20
+GET  /api/ui-tests/artifacts/{run_id}/{filename}
 POST /api/cases/review
 POST /api/openapi/import
 POST /api/coverage/analyze
@@ -288,6 +293,38 @@ POST /api/coverage/analyze
 执行结果会返回通过状态、实际状态码、耗时、响应预览、断言明细、变量提取结果、数据库校验结果和并发指标；如果 MySQL 已启用，会自动写入 `api_test_runs` 表。
 
 详细配置示例见：[docs/API_TEST_EXECUTION.md](docs/API_TEST_EXECUTION.md)
+
+## Playwright UI 自动化执行
+
+前端“UI 自动化”面板支持执行受控的 Playwright 页面步骤。第一版重点保证基础链路稳定：打开页面、点击、填写、等待元素、页面断言、失败截图和 trace 证据。
+
+后端依赖安装后，还需要安装浏览器运行时：
+
+```powershell
+python -m playwright install chromium
+```
+
+默认示例会访问：
+
+```text
+http://127.0.0.1:5173
+```
+
+支持的动作包括：
+
+```text
+goto / click / fill / type / press / select / check / uncheck / waitForSelector / wait / screenshot
+```
+
+支持的页面断言包括：
+
+```text
+visible / hidden / textVisible / urlContains / urlEquals / titleContains / textContains
+```
+
+执行结果会返回步骤明细、断言统计、控制台消息、网络失败摘要、失败截图和 trace 下载地址。如果 MySQL 已启用，会自动写入 `ui_test_runs` 表，并进入报告中心和缺陷跟踪。
+
+详细说明见：[docs/UI_AUTOMATION_PLAYWRIGHT.md](docs/UI_AUTOMATION_PLAYWRIGHT.md)
 
 ## 输入材料
 

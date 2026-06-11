@@ -23,6 +23,10 @@
           <CheckCircle2 aria-hidden="true" />
           用例评审
         </a>
+        <a class="nav-item" href="#uiRunnerTitle" @click="fetchUiRunHistory">
+          <PlayCircle aria-hidden="true" />
+          UI 自动化
+        </a>
         <a class="nav-item" href="#openApiTitle">
           <Network aria-hidden="true" />
           Swagger 导入
@@ -75,7 +79,7 @@
         </div>
         <div class="signal-card">
           <span>EXECUTION</span>
-          <strong>API Test Run</strong>
+          <strong>API + UI Run</strong>
         </div>
       </section>
 
@@ -335,6 +339,16 @@
                     <small v-if="caseExecutionMap[item.id].failureAnalysis.evidence?.length">证据：{{ caseExecutionMap[item.id].failureAnalysis.evidence.slice(0, 2).join("；") }}</small>
                   </div>
                 </section>
+                <section v-if="caseUiConfig(item)" class="case-section case-api-section">
+                  <h4>UI 自动化</h4>
+                  <div class="case-api-line">
+                    <code>{{ caseUiConfig(item).baseUrl || caseUiConfig(item).base_url || "页面步骤配置" }}</code>
+                    <button class="mini-run-button" type="button" @click="loadGeneratedUiCase(item)">
+                      <PlayCircle aria-hidden="true" />
+                      载入 UI
+                    </button>
+                  </div>
+                </section>
                 <section v-if="item.quality?.deductions?.length || item.quality?.suggestions?.length" class="case-section quality-section">
                   <h4>质量建议</h4>
                   <ul v-if="item.quality?.deductions?.length">
@@ -478,10 +492,160 @@
         </div>
       </section>
 
-      <section class="panel openapi-panel" aria-labelledby="openApiTitle">
+      <section class="panel ui-runner-panel api-runner-panel" aria-labelledby="uiRunnerTitle">
         <div class="panel-heading result-heading">
           <div>
             <p class="eyebrow">Step 04</p>
+            <h2 id="uiRunnerTitle">UI 自动化</h2>
+          </div>
+          <div class="result-actions">
+            <button class="secondary-button" type="button" :disabled="isUiRunning" @click="resetUiTest">
+              <RefreshCw aria-hidden="true" />
+              重置
+            </button>
+            <button class="primary-button" type="button" :disabled="isUiRunning" @click="runUiTest">
+              <Send aria-hidden="true" />
+              {{ isUiRunning ? "执行中" : "执行 UI 用例" }}
+            </button>
+          </div>
+        </div>
+
+        <div class="api-runner-grid">
+          <div class="api-form-stack">
+            <div class="api-form-row">
+              <div class="field-group">
+                <label for="uiName">用例名称</label>
+                <input id="uiName" v-model="uiTest.name" class="text-input" type="text" placeholder="登录成功流程" />
+              </div>
+              <div class="field-group">
+                <label for="uiBaseUrl">页面基础地址</label>
+                <input id="uiBaseUrl" v-model="uiTest.baseUrl" class="text-input" type="url" placeholder="http://127.0.0.1:5173" />
+              </div>
+            </div>
+
+            <div class="api-form-row ui-options-row">
+              <div class="field-group">
+                <label for="uiBrowser">浏览器</label>
+                <select id="uiBrowser" v-model="uiTest.browser" class="select-input">
+                  <option value="chromium">Chromium</option>
+                  <option value="firefox">Firefox</option>
+                  <option value="webkit">WebKit</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="uiViewportWidth">宽度</label>
+                <input id="uiViewportWidth" v-model="uiTest.viewportWidth" class="text-input" type="number" min="320" max="3840" />
+              </div>
+              <div class="field-group">
+                <label for="uiViewportHeight">高度</label>
+                <input id="uiViewportHeight" v-model="uiTest.viewportHeight" class="text-input" type="number" min="320" max="2160" />
+              </div>
+              <label class="toggle-line">
+                <input v-model="uiTest.captureTrace" type="checkbox" />
+                <span>Trace</span>
+              </label>
+            </div>
+
+            <div class="advanced-grid ui-config-grid">
+              <div class="field-group compact-field">
+                <label for="uiVariables">变量 JSON</label>
+                <textarea id="uiVariables" v-model="uiTest.variablesText" rows="8" spellcheck="false"></textarea>
+              </div>
+              <div class="field-group compact-field">
+                <label for="uiSteps">步骤 JSON</label>
+                <textarea id="uiSteps" v-model="uiTest.stepsText" rows="8" spellcheck="false"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="api-result-stack">
+            <div class="api-result-card" :class="uiResultClass">
+              <div v-if="uiRunResult" class="api-result-content">
+                <div class="api-result-head">
+                  <span class="pill" :class="uiRunResult.passed ? 'run-pass' : 'run-fail'">
+                    <CheckCircle2 v-if="uiRunResult.passed" aria-hidden="true" />
+                    <AlertTriangle v-else aria-hidden="true" />
+                    {{ uiRunResult.passed ? "通过" : "未通过" }}
+                  </span>
+                  <span class="pill">{{ uiRunResult.response?.durationMs ?? 0 }} ms</span>
+                  <span class="pill">{{ uiRunResult.request?.browser || uiTest.browser }}</span>
+                  <span class="pill">{{ runTypeLabel(uiRunResult.runType) }}</span>
+                </div>
+                <h3>{{ uiRunResult.name }}</h3>
+                <p>{{ runTargetLabel(uiRunResult) }}</p>
+
+                <div class="api-summary-grid">
+                  <div>
+                    <span>步骤</span>
+                    <strong>{{ uiRunResult.summary?.passedSteps ?? 0 }}/{{ uiRunResult.summary?.executedSteps ?? (uiRunResult.steps || []).length }}</strong>
+                  </div>
+                  <div>
+                    <span>断言</span>
+                    <strong>{{ uiRunResult.summary?.passedAssertions ?? passedAssertionCount(uiRunResult) }}/{{ uiRunResult.summary?.assertionCount ?? (uiRunResult.assertions || []).length }}</strong>
+                  </div>
+                  <div>
+                    <span>证据</span>
+                    <strong>{{ Object.keys(uiRunResult.artifacts || {}).length }}</strong>
+                  </div>
+                </div>
+
+                <div class="assertion-grid">
+                  <div v-for="step in uiRunResult.steps || []" :key="`${uiRunResult.runId}-${step.index}`" class="assertion-card" :class="{ passed: step.passed }">
+                    <strong>{{ step.index }}. {{ step.name }}</strong>
+                    <span>{{ step.message }}</span>
+                  </div>
+                </div>
+
+                <div v-if="Object.keys(uiRunResult.artifacts || {}).length" class="ui-artifact-links">
+                  <a v-if="uiRunResult.artifacts?.screenshot" :href="apiUrl(uiRunResult.artifacts.screenshot)" target="_blank" rel="noreferrer">失败截图</a>
+                  <a v-if="uiRunResult.artifacts?.trace" :href="apiUrl(uiRunResult.artifacts.trace)" target="_blank" rel="noreferrer">Trace</a>
+                </div>
+
+                <div v-if="uiRunResult.failureAnalysis && !uiRunResult.passed" class="failure-analysis api-failure-analysis">
+                  <strong>{{ uiRunResult.failureAnalysis.summary }}</strong>
+                  <span>{{ (uiRunResult.failureAnalysis.nextSteps || []).slice(0, 3).join("；") }}</span>
+                  <small>置信度 {{ Math.round((uiRunResult.failureAnalysis.confidence || 0) * 100) }}% · {{ uiRunResult.failureAnalysis.shouldCreateDefect ? "建议纳入缺陷跟踪" : "建议先更新用例" }}</small>
+                  <ul v-if="uiRunResult.failureAnalysis.evidence?.length" class="failure-evidence-list">
+                    <li v-for="item in uiRunResult.failureAnalysis.evidence.slice(0, 3)" :key="item">{{ item }}</li>
+                  </ul>
+                </div>
+
+                <pre class="response-preview">{{ uiRunResult.response?.bodyPreview || uiRunResult.error || "无页面执行摘要" }}</pre>
+              </div>
+              <div v-else class="empty-state api-empty">
+                {{ isUiRunning ? "UI 用例执行中" : "等待 UI 自动化执行" }}
+              </div>
+            </div>
+
+            <div class="api-history-strip" aria-live="polite">
+              <div class="api-history-heading">
+                <span class="side-card-label">UI RUN HISTORY</span>
+                <strong>{{ uiRunHistory.length }} 次</strong>
+              </div>
+              <button
+                v-for="item in uiRunHistory"
+                :key="item.runId"
+                class="api-history-item"
+                :class="{ active: uiRunResult?.runId === item.runId }"
+                type="button"
+                @click="loadUiRun(item)"
+              >
+                <span class="pill" :class="item.passed ? 'run-pass' : 'run-fail'">{{ item.passed ? "PASS" : "FAIL" }}</span>
+                <strong>{{ item.name || "Web UI 自动化用例" }}</strong>
+                <small>{{ formatDate(item.createdAt) }} · {{ item.response?.durationMs ?? 0 }} ms</small>
+              </button>
+              <div v-if="!uiRunHistory.length" class="api-history-empty">
+                {{ isUiHistoryLoading ? "正在读取 UI 执行历史" : "暂无 UI 执行历史" }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel openapi-panel" aria-labelledby="openApiTitle">
+        <div class="panel-heading result-heading">
+          <div>
+            <p class="eyebrow">Step 05</p>
             <h2 id="openApiTitle">Swagger 导入</h2>
           </div>
           <div class="result-actions">
@@ -534,7 +698,7 @@
       <section class="panel api-runner-panel" aria-labelledby="apiRunnerTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Step 05</p>
+            <p class="eyebrow">Step 06</p>
             <h2 id="apiRunnerTitle">接口执行</h2>
           </div>
           <div class="result-actions">
@@ -756,7 +920,7 @@
       <section class="panel report-panel" aria-labelledby="reportTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Step 06</p>
+            <p class="eyebrow">Step 07</p>
             <h2 id="reportTitle">报告中心</h2>
           </div>
           <div class="result-actions">
@@ -806,11 +970,11 @@
                 <span class="pill">{{ runTypeLabel(item.runType) }}</span>
               </div>
               <strong>{{ item.name || `${item.request?.method || ""} ${item.request?.url || ""}` }}</strong>
-              <p>{{ item.request?.method || "-" }} {{ item.request?.url || "-" }}</p>
-              <small>{{ formatDate(item.createdAt) }} · {{ item.response?.durationMs ?? 0 }} ms · HTTP {{ item.response?.statusCode ?? "-" }}</small>
+              <p>{{ runTargetLabel(item) }}</p>
+              <small>{{ formatDate(item.createdAt) }} · {{ item.response?.durationMs ?? 0 }} ms · {{ runStatusLabel(item) }}</small>
             </article>
           </div>
-          <div v-else class="empty-state report-empty">等待接口执行后汇总报告</div>
+          <div v-else class="empty-state report-empty">等待接口或 UI 自动化执行后汇总报告</div>
         </div>
 
         <div class="report-detail-grid">
@@ -837,11 +1001,11 @@
             </ul>
           </article>
           <article class="report-detail-card">
-            <h3>接口执行统计</h3>
+            <h3>自动化执行统计</h3>
             <ul>
               <li><strong>通过率：</strong>{{ reportMetrics.passRate }}</li>
               <li><strong>平均响应时间：</strong>{{ reportMetrics.averageDuration }} ms</li>
-              <li><strong>最慢接口：</strong>{{ reportMetrics.slowestInterface }}</li>
+              <li><strong>最慢执行：</strong>{{ reportMetrics.slowestInterface }}</li>
               <li><strong>P0/P1 失败：</strong>{{ reportMetrics.p0Failures }}/{{ reportMetrics.p1Failures }}</li>
             </ul>
           </article>
@@ -853,11 +1017,11 @@
             <p v-else>当前没有失败分类数据。</p>
           </article>
           <article class="report-detail-card">
-            <h3>慢接口统计</h3>
+            <h3>慢执行统计</h3>
             <ul v-if="reportSlowRunItems.length">
               <li v-for="item in reportSlowRunItems.slice(0, 3)" :key="item.runId || item.label"><strong>{{ item.durationMs }} ms：</strong>{{ item.label }}</li>
             </ul>
-            <p v-else>当前没有可统计的慢接口。</p>
+            <p v-else>当前没有可统计的慢执行。</p>
           </article>
           <article class="report-detail-card">
             <h3>数据库校验结果</h3>
@@ -881,7 +1045,7 @@
       <section class="panel defect-panel" aria-labelledby="defectTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Step 07</p>
+            <p class="eyebrow">Step 08</p>
             <h2 id="defectTitle">缺陷跟踪</h2>
           </div>
           <div class="result-actions">
@@ -981,7 +1145,7 @@
       <section class="panel history-panel" aria-labelledby="historyTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Step 08</p>
+            <p class="eyebrow">Step 09</p>
             <h2 id="historyTitle">历史记录</h2>
           </div>
           <div class="result-actions">
@@ -1108,6 +1272,7 @@ const selectedFiles = ref([]);
 const cases = ref([]);
 const historyItems = ref([]);
 const apiRunHistory = ref([]);
+const uiRunHistory = ref([]);
 const downloadUrl = ref("");
 const activeView = ref("cards");
 const isGenerating = ref(false);
@@ -1115,12 +1280,16 @@ const isDragging = ref(false);
 const isHistoryLoading = ref(false);
 const isApiRunning = ref(false);
 const isApiHistoryLoading = ref(false);
+const isUiRunning = ref(false);
+const isUiHistoryLoading = ref(false);
 const isReviewing = ref(false);
 const requirements = ref("");
 const context = ref("");
 const references = ref("");
 const apiTest = ref(createDefaultApiTest());
 const apiRunResult = ref(null);
+const uiTest = ref(createDefaultUiTest());
+const uiRunResult = ref(null);
 const statusText = ref("待生成");
 const progress = ref(0);
 const searchText = ref("");
@@ -1209,6 +1378,13 @@ const apiResultClass = computed(() => {
   return apiRunResult.value.passed ? "passed" : "failed";
 });
 
+const uiResultClass = computed(() => {
+  if (!uiRunResult.value) {
+    return "";
+  }
+  return uiRunResult.value.passed ? "passed" : "failed";
+});
+
 const advancedConfigCount = computed(() => {
   const fields = [
     apiTest.value.variablesText,
@@ -1225,6 +1401,7 @@ const allRunRecords = computed(() => {
   const merged = new Map();
   const candidates = [
     ...apiRunHistory.value,
+    ...uiRunHistory.value,
     ...Object.values(localRunDetails.value || {}),
     ...Object.values(caseExecutionMap.value || {}),
   ];
@@ -1246,13 +1423,15 @@ const reportSummaryCards = computed(() => {
   const passRate = totalRuns ? `${Math.round((passedRuns / totalRuns) * 100)}%` : "-";
   const averageQuality = coverageReport.value?.averageQualityScore ?? "-";
   const automationReady = coverageReport.value?.automationReady ?? executableCaseCount.value;
+  const uiRuns = allRunRecords.value.filter((item) => item.runType === "ui").length;
   return [
     { label: "当前用例", value: cases.value.length || "-", hint: "当前页面中的测试用例数" },
     { label: "可执行接口", value: executableCaseCount.value || "-", hint: "具备接口配置的用例数" },
+    { label: "UI 执行", value: uiRuns || "-", hint: "已完成的页面自动化执行次数" },
     { label: "执行通过率", value: passRate, hint: `${passedRuns}/${totalRuns || 0} 次执行通过` },
     { label: "失败项", value: failedRuns || "-", hint: "需要继续跟进的执行失败数" },
     { label: "质量均分", value: averageQuality, hint: "当前用例质量平均分" },
-    { label: "自动化就绪", value: `${automationReady}/${cases.value.length || 0}`, hint: "适合继续做自动化的用例" },
+    { label: "自动化就绪", value: `${automationReady}/${cases.value.length || 0}`, hint: "适合继续做接口或 UI 自动化的用例" },
   ];
 });
 
@@ -1269,7 +1448,7 @@ const reportOverviewText = computed(() => {
 
 const reportOverviewHint = computed(() => {
   if (!allRunRecords.value.length) {
-    return "先完成一轮接口执行，这里会自动汇总最近结果。";
+    return "先完成一轮接口或 UI 自动化执行，这里会自动汇总最近结果。";
   }
   const latest = allRunRecords.value[0];
   return `${latest.passed ? "最近一次执行通过" : "最近一次执行失败"}，耗时 ${latest.response?.durationMs ?? 0} ms。`;
@@ -1315,6 +1494,7 @@ onMounted(() => {
   fetchDatabaseStatus();
   fetchHistory();
   fetchApiRunHistory();
+  fetchUiRunHistory();
 });
 
 function toggleTheme() {
@@ -1859,6 +2039,76 @@ async function fetchApiRunHistory() {
   }
 }
 
+async function runUiTest() {
+  if (isUiRunning.value) {
+    return;
+  }
+
+  let payload;
+  try {
+    payload = buildUiPayload();
+  } catch (error) {
+    showToast(error.message || "UI 自动化配置格式不正确");
+    return;
+  }
+
+  isUiRunning.value = true;
+  uiRunResult.value = null;
+  try {
+    const response = await fetch(apiUrl("/api/ui-tests/run"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+
+    const data = await response.json();
+    uiRunResult.value = data;
+    rememberRunDetail(data);
+    showToast(data.passed ? "UI 自动化执行通过。" : "UI 自动化执行未通过。");
+    fetchUiRunHistory();
+    syncDefectCandidates();
+  } catch (error) {
+    showToast(error.message || "UI 自动化执行失败");
+  } finally {
+    isUiRunning.value = false;
+  }
+}
+
+async function fetchUiRunHistory() {
+  isUiHistoryLoading.value = true;
+  try {
+    const response = await fetch(apiUrl("/api/ui-tests/history?limit=20"));
+    const data = await response.json();
+    uiRunHistory.value = data.items || [];
+    syncDefectCandidates();
+  } catch (error) {
+    uiRunHistory.value = [];
+  } finally {
+    isUiHistoryLoading.value = false;
+  }
+}
+
+function loadUiRun(item) {
+  uiRunResult.value = mergeRunRecord(item, localRunDetails.value[item.runId] || null);
+  uiTest.value = {
+    ...createDefaultUiTest(),
+    name: item.name || "",
+    baseUrl: item.request?.url || "",
+    browser: item.request?.browser || "chromium",
+  };
+}
+
+function resetUiTest() {
+  uiTest.value = createDefaultUiTest();
+  uiRunResult.value = null;
+}
+
 function loadApiRun(item) {
   apiRunResult.value = mergeRunRecord(item, localRunDetails.value[item.runId] || null);
   apiTest.value = {
@@ -2086,6 +2336,10 @@ function mergeRunRecord(base, override) {
     extractions: override.extractions || base.extractions || [],
     variables: override.variables || base.variables || {},
     assertions: override.assertions || base.assertions || [],
+    steps: override.steps || base.steps || [],
+    artifacts: override.artifacts || base.artifacts || {},
+    consoleMessages: override.consoleMessages || base.consoleMessages || [],
+    networkErrors: override.networkErrors || base.networkErrors || [],
   };
 }
 
@@ -2244,6 +2498,7 @@ function buildReportEnvironmentItems() {
   const baseUrl = API_BASE_URL || openApiBaseUrl.value || extractBaseUrl(apiTest.value.url) || "未配置";
   return [
     { label: "接口基础地址", value: baseUrl },
+    { label: "UI 基础地址", value: uiTest.value.baseUrl || "未配置" },
     { label: "数据库状态", value: databaseMessage.value || "未检测" },
     { label: "历史记录", value: databaseConnected.value ? "MySQL 已连接" : "MySQL 未连接" },
     { label: "当前报告来源", value: openApiSummary.value.title || "当前工作台 / 接口执行结果" },
@@ -2257,6 +2512,7 @@ function buildReportScopeItems() {
     { label: "用例模块范围", value: modules.slice(0, 4).join("、") || "当前未生成用例" },
     { label: "优先级分布", value: priorities },
     { label: "可执行接口用例", value: `${executableCaseCount.value}/${cases.value.length || 0}` },
+    { label: "UI 自动化执行", value: `${allRunRecords.value.filter((item) => item.runType === "ui").length} 次` },
     { label: "测试范围说明", value: `${cases.value.length || 0} 条用例，覆盖主流程、异常、边界和权限等维度` },
   ];
 }
@@ -2279,8 +2535,9 @@ function buildReportSlowRunItems() {
       label: item.name || `${item.request?.method || ""} ${item.request?.url || ""}`.trim() || "未命名执行",
       durationMs: Number(item.response?.durationMs || 0),
       statusCode: item.response?.statusCode ?? "-",
-      method: item.request?.method || "-",
+      method: runTypeLabel(item.runType),
       url: item.request?.url || "-",
+      status: runStatusLabel(item),
     }))
     .filter((item) => item.durationMs > 0)
     .sort((left, right) => right.durationMs - left.durationMs)
@@ -2334,6 +2591,22 @@ function inferRunFailureCategory(run) {
   if (run.failureAnalysis?.category) {
     return run.failureAnalysis.category;
   }
+  if (run.runType === "ui") {
+    const text = `${run.error || ""} ${run.response?.bodyPreview || ""}`.toLowerCase();
+    if (text.includes("timeout") || text.includes("超时")) {
+      return "ui_timeout";
+    }
+    if (text.includes("locator") || text.includes("strict mode") || text.includes("定位")) {
+      return "ui_locator";
+    }
+    if (text.includes("http") || text.includes("页面返回")) {
+      return "ui_navigation";
+    }
+    if ((run.networkErrors || []).length) {
+      return "ui_network";
+    }
+    return "ui_assertion";
+  }
   const status = Number(run.response?.statusCode || 0);
   const error = String(run.error || "").toLowerCase();
   if (error.includes("超时") || error.includes("timeout") || error.includes("connect")) {
@@ -2367,6 +2640,12 @@ function failureCategoryLabel(category) {
     api_contract_changed: "契约变化",
     backend_bug: "后端缺陷",
     database_consistency: "数据库一致性",
+    ui_timeout: "UI 超时",
+    ui_locator: "UI 定位器",
+    ui_assertion: "UI 断言",
+    ui_navigation: "页面访问",
+    ui_network: "页面网络",
+    ui_runtime: "UI 执行",
     passed: "执行通过",
   };
   return labels[category] || "其他";
@@ -2452,7 +2731,7 @@ function createReportMarkdown() {
     "## 用例执行统计",
     ...model.caseExecutionStats.map((item) => `- ${item.label}：${item.value}`),
     "",
-    "## 接口执行统计",
+    "## 自动化执行统计",
     ...model.apiExecutionStats.map((item) => `- ${item.label}：${item.value}`),
     "",
     "## 覆盖率分析",
@@ -2467,8 +2746,8 @@ function createReportMarkdown() {
     "## 缺陷跟踪",
     ...(model.defects.length ? model.defects.map((item) => `- ${item.title} | 状态：${item.status} | 优先级：${item.severity} | 重复：${item.occurrences}`) : ["- 当前没有缺陷记录"]),
     "",
-    "## 慢接口统计",
-    ...(model.slowRuns.length ? model.slowRuns.map((item) => `- ${item.label} · ${item.durationMs} ms · HTTP ${item.statusCode}`) : ["- 当前没有慢接口数据"]),
+    "## 慢执行统计",
+    ...(model.slowRuns.length ? model.slowRuns.map((item) => `- ${item.label} · ${item.durationMs} ms · ${item.status}`) : ["- 当前没有慢执行数据"]),
     "",
     "## 数据库校验结果",
     ...model.databaseChecks.map((item) => `- ${item.label}：${item.value}`),
@@ -2535,12 +2814,12 @@ function createReportHtml() {
     ${renderDefinitionSection("测试环境", model.environment)}
     ${renderDefinitionSection("测试范围", model.scope)}
     ${renderDefinitionSection("用例执行统计", model.caseExecutionStats)}
-    ${renderDefinitionSection("接口执行统计", model.apiExecutionStats)}
+    ${renderDefinitionSection("自动化执行统计", model.apiExecutionStats)}
     ${renderDefinitionSection("覆盖率分析", model.coverageAnalysis)}
     ${renderDefinitionSection("用例质量分析", model.qualityAnalysis)}
     ${renderDefinitionSection("失败分析", model.failureAnalysis, "当前没有失败分类数据。")}
     ${renderTableSection("缺陷跟踪", ["标题", "状态", "优先级", "重复次数", "负责人"], model.defects.map((item) => [item.title, item.status, item.severity, item.occurrences, item.owner || "-"]), "当前没有缺陷记录。")}
-    ${renderTableSection("慢接口统计", ["名称", "方法", "接口", "耗时(ms)", "状态码"], model.slowRuns.map((item) => [item.label, item.method, item.url, item.durationMs, item.statusCode]), "当前没有慢接口数据。")}
+    ${renderTableSection("慢执行统计", ["名称", "类型", "目标", "耗时(ms)", "状态"], model.slowRuns.map((item) => [item.label, item.method, item.url, item.durationMs, item.status]), "当前没有慢执行数据。")}
     ${renderDefinitionSection("数据库校验结果", model.databaseChecks)}
     ${renderListSection("风险提示", model.risks, "当前没有额外风险提示。")}
     <section><h2>测试结论</h2><div class="card"><p>${escapeHtml(model.conclusion)}</p></div></section>
@@ -2583,7 +2862,7 @@ function buildReportModel() {
     apiExecutionStats: [
       { label: "通过率", value: metrics.passRate },
       { label: "平均响应时间", value: `${metrics.averageDuration} ms` },
-      { label: "最慢接口", value: metrics.slowestInterface },
+      { label: "最慢执行", value: metrics.slowestInterface },
       { label: "最近执行记录", value: recentReportRuns.value.length ? recentReportRuns.value.map((item) => item.name || `${item.request?.method || ""} ${item.request?.url || ""}`).slice(0, 3).join("；") : "暂无" },
     ],
     coverageAnalysis: [
@@ -2644,7 +2923,7 @@ function metricLabel(key) {
     defectCount: "缺陷总数",
     unresolvedDefects: "未解决缺陷数",
     averageDuration: "平均响应时间",
-    slowestInterface: "最慢接口",
+    slowestInterface: "最慢执行",
   };
   return labels[key] || key;
 }
@@ -2677,13 +2956,18 @@ function escapeHtml(value) {
 }
 
 function loadDefectRun(item) {
-  const matched = apiRunHistory.value.find((run) => run.runId === item.latestRunId);
+  const matched = allRunRecords.value.find((run) => run.runId === item.latestRunId);
   if (!matched) {
     showToast("没有找到对应的执行记录。");
     return;
   }
-  loadApiRun(matched);
-  window.location.hash = "#apiRunnerTitle";
+  if (matched.runType === "ui") {
+    loadUiRun(matched);
+    window.location.hash = "#uiRunnerTitle";
+  } else {
+    loadApiRun(matched);
+    window.location.hash = "#apiRunnerTitle";
+  }
 }
 
 function createDefaultApiTest() {
@@ -2710,6 +2994,20 @@ function createDefaultApiTest() {
   };
 }
 
+function createDefaultUiTest() {
+  const baseUrl = "http://127.0.0.1:5173";
+  return {
+    name: "本地首页可访问检查",
+    baseUrl,
+    browser: "chromium",
+    viewportWidth: 1280,
+    viewportHeight: 720,
+    captureTrace: true,
+    variablesText: `{\n  "web_base_url": "${baseUrl}"\n}`,
+    stepsText: '[\n  {\n    "name": "打开测试平台首页",\n    "action": "goto",\n    "url": "{{web_base_url}}/"\n  },\n  {\n    "name": "系统标题可见",\n    "assertion": "textVisible",\n    "locator": "text=测试用例智能生成系统"\n  }\n]',
+  };
+}
+
 async function analyzeCurrentCoverage(items) {
   if (!items.length) {
     return null;
@@ -2729,9 +3027,60 @@ async function analyzeCurrentCoverage(items) {
   }
 }
 
+function buildUiPayload() {
+  const variables = parseJsonText(uiTest.value.variablesText, {}, "UI 变量 JSON");
+  const steps = parseJsonText(uiTest.value.stepsText, [], "UI 步骤 JSON");
+  if (!Array.isArray(steps) || !steps.length) {
+    throw new Error("UI 步骤 JSON 至少需要 1 个步骤。");
+  }
+  return {
+    name: uiTest.value.name.trim() || "Web UI 自动化用例",
+    baseUrl: uiTest.value.baseUrl.trim(),
+    browser: uiTest.value.browser || "chromium",
+    headless: true,
+    viewport: {
+      width: Number(uiTest.value.viewportWidth) || 1280,
+      height: Number(uiTest.value.viewportHeight) || 720,
+    },
+    variables,
+    steps,
+    timeoutSeconds: 30,
+    stepTimeoutMs: 8000,
+    captureTrace: Boolean(uiTest.value.captureTrace),
+    captureScreenshot: true,
+    continueOnFailure: false,
+  };
+}
+
 function caseApiConfig(item) {
   const config = item?.api_test || item?.apiTest;
   return config && config.method && config.url ? config : null;
+}
+
+function caseUiConfig(item) {
+  const config = item?.ui_test || item?.uiTest;
+  return config && Array.isArray(config.steps) && config.steps.length ? config : null;
+}
+
+function loadGeneratedUiCase(item) {
+  const config = caseUiConfig(item);
+  if (!config) {
+    showToast("这条用例没有可执行 UI 配置。");
+    return;
+  }
+  uiTest.value = {
+    ...createDefaultUiTest(),
+    name: config.name || item.title || "Web UI 自动化用例",
+    baseUrl: config.baseUrl || config.base_url || "",
+    browser: config.browser || "chromium",
+    viewportWidth: config.viewport?.width || 1280,
+    viewportHeight: config.viewport?.height || 720,
+    variablesText: JSON.stringify(config.variables || {}, null, 2),
+    stepsText: JSON.stringify(config.steps || [], null, 2),
+  };
+  uiRunResult.value = null;
+  window.location.hash = "#uiRunnerTitle";
+  showToast("已载入 UI 自动化配置，请确认变量和定位器后执行。");
 }
 
 function buildApiPayload() {
@@ -2809,8 +3158,24 @@ function runTypeLabel(value) {
     single: "单接口",
     suite: "用例集",
     load: "并发",
+    ui: "UI 自动化",
   };
   return labels[value] || "单接口";
+}
+
+function runTargetLabel(item) {
+  if (item?.runType === "ui") {
+    return `${item.request?.browser || "chromium"} · ${item.request?.url || "页面自动化"}`;
+  }
+  return `${item?.request?.method || "-"} ${item?.request?.url || "-"}`;
+}
+
+function runStatusLabel(item) {
+  if (item?.runType === "ui") {
+    const steps = item.summary?.executedSteps ?? (item.steps || []).length;
+    return `UI 步骤 ${steps}`;
+  }
+  return `HTTP ${item?.response?.statusCode ?? "-"}`;
 }
 
 function passedAssertionCount(result) {

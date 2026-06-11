@@ -11,3 +11,4 @@ xlrd
 SQLAlchemy
 PyMySQL
 PyYAML
+playwright

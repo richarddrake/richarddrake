@@ -27,6 +27,7 @@ HEADERS = [
     ("quality", "质量评分"),
     ("coverage", "覆盖分析"),
     ("api_test", "可执行接口配置"),
+    ("ui_test", "可执行 UI 配置"),
     ("execution", "最近执行结果"),
 ]
 
