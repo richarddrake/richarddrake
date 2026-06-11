@@ -31,7 +31,7 @@ scripts/                   Windows 启动和端口释放脚本
 
 ## 功能
 
-- 科技风 Vue 前端界面，包含左侧导航栏、工作台、用例生成、Swagger 导入、接口执行、报告中心、缺陷跟踪和历史记录
+- 科技风 Vue 前端界面，包含左侧导航栏、工作台、用例生成、用例评审、Swagger 导入、接口执行、报告中心、缺陷跟踪和历史记录
 - 多源材料上传与预览
 - 支持图片、Excel、CSV、Word、PDF、Markdown、JSON、YAML、文本文件、飞书/网页链接
 - 需求、上下文背景、外部文档链接输入
@@ -41,6 +41,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 生成过程解析动态展示
 - 测试用例卡片视图、表格视图、搜索过滤
 - 每条用例展示执行就绪状态、不可执行原因、需求追溯和质量扣分原因
+- 支持用例评审模块，按通过、需修改、阻塞输出评审结论、集中问题和修改建议
 - 自动保存 Excel 并提供下载
 - 支持 MySQL 保存生成历史和用例明细
 - 支持报告中心汇总最近执行结果、通过率和覆盖风险
@@ -279,6 +280,7 @@ POST /api/api-tests/suite
 POST /api/api-tests/load
 POST /api/cases/execute
 GET  /api/api-tests/history?limit=20
+POST /api/cases/review
 POST /api/openapi/import
 POST /api/coverage/analyze
 ```

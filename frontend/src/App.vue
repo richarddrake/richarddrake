@@ -19,6 +19,10 @@
           <Zap aria-hidden="true" />
           用例生成
         </a>
+        <a class="nav-item" href="#reviewTitle">
+          <CheckCircle2 aria-hidden="true" />
+          用例评审
+        </a>
         <a class="nav-item" href="#openApiTitle">
           <Network aria-hidden="true" />
           Swagger 导入
@@ -390,10 +394,94 @@
         </section>
       </section>
 
-      <section class="panel openapi-panel" aria-labelledby="openApiTitle">
+      <section class="panel review-panel" aria-labelledby="reviewTitle">
         <div class="panel-heading result-heading">
           <div>
             <p class="eyebrow">Step 03</p>
+            <h2 id="reviewTitle">用例评审</h2>
+          </div>
+          <div class="result-actions">
+            <button class="secondary-button" type="button" :disabled="!cases.length || isReviewing" @click="() => runCaseReview()">
+              <RefreshCw aria-hidden="true" />
+              {{ isReviewing ? "评审中" : "重新评审" }}
+            </button>
+          </div>
+        </div>
+
+        <div class="review-layout">
+          <div class="review-summary">
+            <div class="review-verdict" :class="`review-${caseReviewReport?.verdictLevel || 'empty'}`">
+              <span class="side-card-label">REVIEW VERDICT</span>
+              <strong>{{ caseReviewReport?.verdict || "待评审" }}</strong>
+              <p>{{ caseReviewReport?.verdictReason || "生成或导入用例后，系统会从追溯、步骤、预期、执行就绪和重复风险等维度给出评审结论。" }}</p>
+            </div>
+            <div class="review-metrics">
+              <div v-for="item in reviewSummaryCards" :key="item.label" class="review-metric-card">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+                <small>{{ item.hint }}</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="review-checklist">
+            <article v-for="item in reviewChecklist" :key="item.label" class="review-check-card" :class="`check-${item.status}`">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.passed }}/{{ item.total }}</strong>
+              <div class="coverage-bar" aria-hidden="true"><i :style="{ width: `${Math.round((item.ratio || 0) * 100)}%` }"></i></div>
+              <small>{{ item.suggestion }}</small>
+            </article>
+          </div>
+
+          <div v-if="reviewTopIssues.length || reviewRecommendations.length" class="review-insight-grid">
+            <article class="review-insight-card">
+              <span class="side-card-label">TOP ISSUES</span>
+              <ul v-if="reviewTopIssues.length">
+                <li v-for="item in reviewTopIssues" :key="item.issue">{{ item.issue }} · {{ item.count }} 次</li>
+              </ul>
+              <p v-else>当前没有明显集中问题。</p>
+            </article>
+            <article class="review-insight-card">
+              <span class="side-card-label">ACTIONS</span>
+              <ul v-if="reviewRecommendations.length">
+                <li v-for="item in reviewRecommendations" :key="item">{{ item }}</li>
+              </ul>
+              <p v-else>等待评审结果。</p>
+            </article>
+          </div>
+
+          <div class="review-list">
+            <div class="review-list-heading">
+              <span class="side-card-label">CASE REVIEW ITEMS</span>
+              <strong>{{ reviewItems.length }} 条</strong>
+            </div>
+            <article v-for="item in reviewItems" :key="`review-${item.id || item.title}`" class="review-item-card" :class="reviewStatusClass(item.status)">
+              <header>
+                <div>
+                  <span class="pill" :class="priorityClass(item.priority)">{{ item.priority }}</span>
+                  <span class="pill">{{ item.id || "未编号" }}</span>
+                  <span class="pill">{{ item.qualityScore }} 分</span>
+                </div>
+                <span class="pill" :class="reviewStatusClass(item.status)">{{ reviewStatusLabel(item.status) }}</span>
+              </header>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.module }} · {{ item.caseType }} · {{ item.readinessLabel }}</p>
+              <div v-if="item.issues.length" class="review-tags">
+                <span v-for="issue in item.issues.slice(0, 4)" :key="issue">{{ issue }}</span>
+              </div>
+              <ul v-if="item.actions.length">
+                <li v-for="action in item.actions.slice(0, 3)" :key="action">{{ action }}</li>
+              </ul>
+            </article>
+            <div v-if="!reviewItems.length" class="empty-state review-empty">{{ cases.length ? "等待评审结果" : "生成或导入用例后可开始评审" }}</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel openapi-panel" aria-labelledby="openApiTitle">
+        <div class="panel-heading result-heading">
+          <div>
+            <p class="eyebrow">Step 04</p>
             <h2 id="openApiTitle">Swagger 导入</h2>
           </div>
           <div class="result-actions">
@@ -446,7 +534,7 @@
       <section class="panel api-runner-panel" aria-labelledby="apiRunnerTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Step 04</p>
+            <p class="eyebrow">Step 05</p>
             <h2 id="apiRunnerTitle">接口执行</h2>
           </div>
           <div class="result-actions">
@@ -668,7 +756,7 @@
       <section class="panel report-panel" aria-labelledby="reportTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Step 05</p>
+            <p class="eyebrow">Step 06</p>
             <h2 id="reportTitle">报告中心</h2>
           </div>
           <div class="result-actions">
@@ -793,7 +881,7 @@
       <section class="panel defect-panel" aria-labelledby="defectTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Step 06</p>
+            <p class="eyebrow">Step 07</p>
             <h2 id="defectTitle">缺陷跟踪</h2>
           </div>
           <div class="result-actions">
@@ -893,7 +981,7 @@
       <section class="panel history-panel" aria-labelledby="historyTitle">
         <div class="panel-heading result-heading">
           <div>
-            <p class="eyebrow">Step 07</p>
+            <p class="eyebrow">Step 08</p>
             <h2 id="historyTitle">历史记录</h2>
           </div>
           <div class="result-actions">
@@ -1027,6 +1115,7 @@ const isDragging = ref(false);
 const isHistoryLoading = ref(false);
 const isApiRunning = ref(false);
 const isApiHistoryLoading = ref(false);
+const isReviewing = ref(false);
 const requirements = ref("");
 const context = ref("");
 const references = ref("");
@@ -1041,6 +1130,7 @@ const databaseMessage = ref("MySQL 状态检测中");
 const databaseConnected = ref(false);
 const toastMessage = ref("");
 const coverageReport = ref(null);
+const caseReviewReport = ref(null);
 const openApiContent = ref("");
 const openApiUrl = ref("");
 const openApiBaseUrl = ref(API_BASE_URL || "http://127.0.0.1:8000");
@@ -1095,6 +1185,22 @@ const coverageCards = computed(() => {
     };
   });
 });
+
+const reviewSummaryCards = computed(() => {
+  const report = caseReviewReport.value || {};
+  return [
+    { label: "总用例", value: report.totalCases ?? cases.value.length, hint: "当前进入评审的用例数" },
+    { label: "通过", value: report.approved ?? 0, hint: "结构完整，可进入执行或归档" },
+    { label: "需修改", value: report.needsRevision ?? 0, hint: "存在非阻塞修改建议" },
+    { label: "阻塞", value: report.blocked ?? 0, hint: "建议先修复后再执行" },
+    { label: "质量均分", value: report.averageQualityScore ?? "-", hint: "按当前用例质量评分汇总" },
+  ];
+});
+
+const reviewChecklist = computed(() => caseReviewReport.value?.checklist || []);
+const reviewItems = computed(() => caseReviewReport.value?.items || []);
+const reviewTopIssues = computed(() => caseReviewReport.value?.topIssues || []);
+const reviewRecommendations = computed(() => caseReviewReport.value?.recommendations || []);
 
 const apiResultClass = computed(() => {
   if (!apiRunResult.value) {
@@ -1308,6 +1414,7 @@ function prepareGenerationState() {
   cases.value = [];
   downloadUrl.value = "";
   coverageReport.value = null;
+  caseReviewReport.value = null;
   caseExecutionMap.value = {};
   streamMessages.value = [];
   statusText.value = "生成中";
@@ -1392,6 +1499,7 @@ function handleEvent(eventName, data) {
     coverageReport.value = data.coverageReport || coverageReport.value;
     statusText.value = `完成，已保存 ${data.count || cases.value.length} 条`;
     progress.value = 100;
+    runCaseReview(true);
     fetchDatabaseStatus();
     fetchHistory();
     return;
@@ -1413,6 +1521,7 @@ function resetAll() {
   cases.value = [];
   downloadUrl.value = "";
   coverageReport.value = null;
+  caseReviewReport.value = null;
   caseExecutionMap.value = {};
   streamMessages.value = [];
   requirements.value = "";
@@ -1467,12 +1576,44 @@ async function importOpenApi() {
     statusText.value = `Swagger 已生成 ${cases.value.length} 条`;
     progress.value = 100;
     activeView.value = "cards";
+    runCaseReview(true);
     fetchHistory();
     showToast("OpenAPI 用例已生成。");
   } catch (error) {
     showToast(error.message || "OpenAPI 导入失败");
   } finally {
     isOpenApiImporting.value = false;
+  }
+}
+
+async function runCaseReview(silent = false) {
+  if (!cases.value.length) {
+    caseReviewReport.value = null;
+    if (!silent) {
+      showToast("请先生成或导入用例。");
+    }
+    return;
+  }
+  isReviewing.value = true;
+  try {
+    const response = await fetch(apiUrl("/api/cases/review"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cases: cases.value }),
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+    caseReviewReport.value = await response.json();
+    if (!silent) {
+      showToast(`评审完成：${caseReviewReport.value.verdict || "待评审"}`);
+    }
+  } catch (error) {
+    if (!silent) {
+      showToast(error.message || "用例评审失败");
+    }
+  } finally {
+    isReviewing.value = false;
   }
 }
 
@@ -1871,12 +2012,14 @@ async function loadHistoryDetail(sessionId) {
     selectedHistoryId.value = sessionId;
     cases.value = detail.cases || [];
     caseExecutionMap.value = {};
+    caseReviewReport.value = null;
     streamMessages.value = [];
     coverageReport.value = await analyzeCurrentCoverage(cases.value);
     downloadUrl.value = detail.downloadUrl || "";
     statusText.value = `已加载历史 ${cases.value.length} 条`;
     progress.value = cases.value.length ? 100 : 0;
     activeView.value = "cards";
+    runCaseReview(true);
   } catch (error) {
     showToast(error.message || "读取历史记录失败");
   }
@@ -2251,6 +2394,19 @@ function caseReadinessClass(item) {
     return "execution-warn-pill";
   }
   return "execution-manual-pill";
+}
+
+function reviewStatusLabel(status) {
+  const labels = {
+    approved: "通过",
+    needs_revision: "需修改",
+    blocked: "阻塞",
+  };
+  return labels[status] || "待评审";
+}
+
+function reviewStatusClass(status) {
+  return `review-status-${status || "empty"}`;
 }
 
 function downloadReport(format = "md") {

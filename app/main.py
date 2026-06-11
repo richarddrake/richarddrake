@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas import UploadedMaterial, normalize_case
 from app.services.api_runner import run_api_load_test, run_api_test, run_api_test_suite
 from app.services.case_quality import build_coverage_report, enrich_case_dict, enrich_cases
+from app.services.case_review import build_case_review
 from app.services.database import (
     get_database_status,
     get_history_detail,
@@ -91,6 +92,12 @@ class OpenApiImportRequest(BaseModel):
 
 
 class CoverageAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    cases: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CaseReviewRequest(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     cases: list[dict[str, Any]] = Field(default_factory=list)
@@ -241,6 +248,12 @@ async def import_openapi(request: OpenApiImportRequest) -> dict:
 async def analyze_coverage(request: CoverageAnalyzeRequest) -> dict:
     enriched = [enrich_case_dict(item, request.cases) for item in request.cases]
     return build_coverage_report(enriched)
+
+
+@app.post("/api/cases/review")
+async def review_cases(request: CaseReviewRequest) -> dict:
+    enriched = [enrich_case_dict(item, request.cases) for item in request.cases]
+    return build_case_review(enriched)
 
 
 @app.post("/api/generate")
