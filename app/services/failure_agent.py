@@ -35,6 +35,8 @@ def analyze_failure(result: dict[str, Any], case: dict[str, Any] | None = None) 
         "evidence": evidence,
         "nextSteps": next_steps,
         "caseUpdateSuggestion": _case_update_suggestion(category),
+        "shouldCreateDefect": _should_create_defect(category, score),
+        "shouldUpdateCase": category in {"assertion", "api_contract_changed", "request_params", "auth"},
     }
 
 
@@ -148,3 +150,11 @@ def _case_update_suggestion(category: str) -> str:
     if category == "database_consistency":
         return "建议把数据库断言和接口返回字段绑定到同一业务编号，减少误判。"
     return "暂不建议直接修改用例，先排查环境和服务端日志。"
+
+
+def _should_create_defect(category: str, score: int) -> bool:
+    if category in {"backend_bug", "database_consistency", "api_contract_changed"}:
+        return True
+    if category in {"auth", "request_params", "assertion"} and score >= 6:
+        return True
+    return False

@@ -20,6 +20,8 @@ COVERAGE_BUCKETS = {
     "security": ["安全", "注入", "越权", "敏感", "脱敏", "csrf", "xss"],
 }
 
+EXECUTION_HINTS = ("接口", "api", "http", "swagger", "openapi", "url", "endpoint")
+
 
 def enrich_cases(cases: list[TestCase]) -> list[TestCase]:
     title_counts = Counter(_fingerprint(case.title) for case in cases)
@@ -56,15 +58,27 @@ def build_coverage_report(cases: list[TestCase] | list[dict[str, Any]]) -> dict[
     priority_hits: dict[str, int] = {}
     module_hits: dict[str, int] = {}
     automation_ready = 0
+    automation_partial = 0
+    automation_manual = 0
     quality_scores: list[int] = []
+    quality_levels: dict[str, int] = {}
+    issue_counts: Counter[str] = Counter()
     matrix: list[dict[str, Any]] = []
 
     for case in normalized:
         coverage = case.get("coverage") if isinstance(case.get("coverage"), dict) else classify_coverage(case)
         quality = case.get("quality") if isinstance(case.get("quality"), dict) else score_case(case, Counter())
+        readiness = quality.get("executionReadiness") if isinstance(quality.get("executionReadiness"), dict) else assess_execution_readiness(case)
         quality_scores.append(int(quality.get("score") or 0))
-        if case.get("api_test") or case.get("apiTest"):
+        quality_level = str(quality.get("level") or "C")
+        quality_levels[quality_level] = quality_levels.get(quality_level, 0) + 1
+        issue_counts.update(str(item) for item in quality.get("issues") or [])
+        if readiness.get("ready"):
             automation_ready += 1
+        elif readiness.get("kind") == "api":
+            automation_partial += 1
+        else:
+            automation_manual += 1
         priority = str(case.get("priority") or "P1")
         module = str(case.get("module") or "核心流程")
         priority_hits[priority] = priority_hits.get(priority, 0) + 1
@@ -80,7 +94,10 @@ def build_coverage_report(cases: list[TestCase] | list[dict[str, Any]]) -> dict[
                 "priority": priority,
                 "coverage": coverage.get("buckets", []),
                 "qualityScore": quality.get("score", 0),
-                "automationReady": bool(case.get("api_test") or case.get("apiTest")),
+                "automationReady": bool(readiness.get("ready")),
+                "executionStatus": readiness.get("status", "manual"),
+                "executionReason": readiness.get("reason", ""),
+                "requirementId": case.get("requirement_id") or case.get("requirementId") or "",
             }
         )
 
@@ -95,6 +112,41 @@ def build_coverage_report(cases: list[TestCase] | list[dict[str, Any]]) -> dict[
     uncovered = [key for key, value in bucket_hits.items() if total and value == 0]
     risks = _coverage_risks(ratios, automation_ready, total)
     average_quality = round(sum(quality_scores) / len(quality_scores), 1) if quality_scores else 0
+    coverage_summary = [
+        {
+            "key": key,
+            "label": _bucket_label(key),
+            "covered": value["covered"],
+            "total": value["total"],
+            "ratio": value["ratio"],
+            "description": _coverage_description(key),
+        }
+        for key, value in ratios.items()
+    ]
+    uncovered_details = [
+        {
+            "key": key,
+            "label": _bucket_label(key),
+            "reason": f"当前结果还没有明显覆盖到{_bucket_label(key)}相关场景。",
+            "suggestion": _coverage_suggestion(key),
+        }
+        for key in uncovered
+    ]
+    blocked_examples = [
+        {
+            "id": item.get("id", ""),
+            "title": item.get("title", ""),
+            "reason": item.get("executionReason", ""),
+        }
+        for item in matrix
+        if item.get("executionStatus") == "needs_info"
+    ][:6]
+    quality_summary = {
+        "levels": quality_levels,
+        "topIssues": [{"issue": issue, "count": count} for issue, count in issue_counts.most_common(5)],
+    }
+    recommendations = [*risks]
+    recommendations.extend(detail["suggestion"] for detail in uncovered_details[:3])
 
     return {
         "totalCases": total,
@@ -104,8 +156,18 @@ def build_coverage_report(cases: list[TestCase] | list[dict[str, Any]]) -> dict[
         "priorityMix": priority_hits,
         "moduleMix": module_hits,
         "coverage": ratios,
+        "coverageSummary": coverage_summary,
         "uncovered": uncovered,
+        "uncoveredDetails": uncovered_details,
         "risks": risks,
+        "recommendations": recommendations[:8],
+        "automationSummary": {
+            "ready": automation_ready,
+            "needsInfo": automation_partial,
+            "manual": automation_manual,
+            "blockedExamples": blocked_examples,
+        },
+        "qualitySummary": quality_summary,
         "matrix": matrix,
     }
 
@@ -119,16 +181,18 @@ def score_case(case: dict[str, Any], title_counts: Counter[str]) -> dict[str, An
     test_data = str(case.get("test_data") or "").strip()
     tags = _as_list(case.get("tags"))
     api_test = _as_dict(case.get("api_test") or case.get("apiTest"))
+    readiness = assess_execution_readiness(case)
     assertions = _as_list(api_test.get("assertions")) if api_test else []
     expected_status = api_test.get("expectedStatus") or api_test.get("expected_status") if api_test else None
     schema = api_test.get("jsonSchema") or api_test.get("json_schema") if api_test else None
+    requirement_id = str(case.get("requirement_id") or case.get("requirementId") or "").strip()
 
     dimensions = {
         "steps": 20 if len(steps) >= 3 else 12 if steps else 0,
         "expected": 20 if _has_verifiable_expected(expected) else 10 if expected else 0,
         "testData": 15 if len(test_data) >= 6 else 6 if test_data else 0,
         "coverage": 15 if len(tags) >= 2 else 8 if tags else 0,
-        "automation": 20 if _is_executable_api(api_test) and (assertions or expected_status or schema) else 12 if _is_executable_api(api_test) else 0,
+        "automation": _automation_score(readiness, assertions, expected_status, schema),
         "uniqueness": 10,
     }
 
@@ -150,16 +214,32 @@ def score_case(case: dict[str, Any], title_counts: Counter[str]) -> dict[str, An
     if dimensions["coverage"] < 15:
         suggestions.append("补充覆盖标签，例如主流程、异常、边界、权限、数据一致性。")
     if dimensions["automation"] < 20:
-        suggestions.append("如属于接口场景，补充 method、url、headers、body、assertions 和 jsonSchema。")
+        if readiness.get("kind") == "api":
+            suggestions.append("如属于接口场景，补充 method、url、headers、body、assertions 和 jsonSchema。")
+        else:
+            suggestions.append("这条用例更适合作为手工测试或评审用例，可保留为非接口执行项。")
+    if not requirement_id:
+        suggestions.append("补充 requirement_id 或需求编号，方便后续追溯来源。")
+
+    deductions = [
+        _dimension_breakdown("steps", "步骤可执行性", dimensions["steps"], 20, "步骤不够清晰，执行人可能无法稳定复现。"),
+        _dimension_breakdown("expected", "预期可验证性", dimensions["expected"], 20, "预期结果缺少可验证的状态、字段或落库依据。"),
+        _dimension_breakdown("testData", "测试数据完整性", dimensions["testData"], 15, "测试数据样例、边界值或账号信息不足。"),
+        _dimension_breakdown("coverage", "覆盖标签完整性", dimensions["coverage"], 15, "覆盖标签偏少，难以看出主流程、异常、边界等范围。"),
+        _dimension_breakdown("automation", "执行就绪度", dimensions["automation"], 20, readiness.get("reason", "缺少稳定执行所需的接口配置或断言。")),
+        _dimension_breakdown("uniqueness", "重复度", dimensions["uniqueness"], 10, "标题或验证目标与其他用例重复。"),
+    ]
 
     score = sum(dimensions.values())
     return {
         "score": max(0, min(100, score)),
         "level": "A" if score >= 85 else "B" if score >= 70 else "C" if score >= 55 else "D",
         "dimensions": dimensions,
+        "deductions": [item for item in deductions if item["lost"] > 0],
         "issues": issues[:5],
         "suggestions": suggestions[:5],
         "automationReady": dimensions["automation"] >= 20,
+        "executionReadiness": readiness,
     }
 
 
@@ -207,8 +287,82 @@ def _case_to_dict(case: TestCase | dict[str, Any]) -> dict[str, Any]:
     return case.to_dict() if isinstance(case, TestCase) else dict(case)
 
 
-def _is_executable_api(api_test: dict[str, Any]) -> bool:
-    return bool(api_test.get("method") and api_test.get("url"))
+def assess_execution_readiness(case: dict[str, Any]) -> dict[str, Any]:
+    api_test = _as_dict(case.get("api_test") or case.get("apiTest"))
+    text = " ".join(
+        [
+            str(case.get("title") or ""),
+            str(case.get("module") or ""),
+            str(case.get("case_type") or ""),
+            str(case.get("scenario") or ""),
+            " ".join(_as_list(case.get("tags"))),
+        ]
+    ).lower()
+    is_api_case = bool(api_test) or any(hint in text for hint in EXECUTION_HINTS)
+    if not is_api_case:
+        return {
+            "kind": "manual",
+            "ready": False,
+            "status": "manual",
+            "label": "手工用例",
+            "reason": "当前更像是手工测试或评审用例，不要求直接通过接口执行器运行。",
+            "missing": [],
+            "warnings": [],
+        }
+
+    missing = [field for field in ["method", "url"] if not str(api_test.get(field) or "").strip()]
+    if not api_test:
+        missing.insert(0, "api_test")
+
+    assertions = _as_list(api_test.get("assertions")) if api_test else []
+    expected_status = api_test.get("expectedStatus") or api_test.get("expected_status") if api_test else None
+    schema = api_test.get("jsonSchema") or api_test.get("json_schema") if api_test else None
+    warnings: list[str] = []
+    if not missing and not (assertions or expected_status or schema):
+        warnings.append("虽然 method 和 url 已存在，但断言仍然偏弱，建议补充状态码、JSONPath 或 Schema 校验。")
+
+    if missing:
+        readable = ", ".join(missing)
+        return {
+            "kind": "api",
+            "ready": False,
+            "status": "needs_info",
+            "label": "待补齐",
+            "reason": f"已识别为接口相关用例，但缺少 {readable}，暂时不能一键执行。",
+            "missing": missing,
+            "warnings": warnings,
+        }
+
+    return {
+        "kind": "api",
+        "ready": True,
+        "status": "ready",
+        "label": "可执行",
+        "reason": "接口配置已具备执行条件，可直接送入接口执行器。",
+        "missing": [],
+        "warnings": warnings,
+    }
+
+
+def _automation_score(readiness: dict[str, Any], assertions: list[Any], expected_status: Any, schema: Any) -> int:
+    if readiness.get("kind") == "manual":
+        return 14
+    if readiness.get("ready") and (assertions or expected_status or schema):
+        return 20
+    if readiness.get("ready"):
+        return 14
+    return 4
+
+
+def _dimension_breakdown(key: str, label: str, score: int, max_score: int, reason: str) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "score": score,
+        "max": max_score,
+        "lost": max(0, max_score - score),
+        "reason": reason,
+    }
 
 
 def _has_verifiable_expected(expected: list[Any]) -> bool:
@@ -250,3 +404,33 @@ def _bucket_label(bucket: str) -> str:
         "security": "安全",
     }
     return labels.get(bucket, bucket)
+
+
+def _coverage_description(bucket: str) -> str:
+    descriptions = {
+        "requirement": "用于确认需求主流程和业务意图是否被覆盖。",
+        "interface": "用于确认接口请求、响应和契约层面的测试是否充分。",
+        "field": "用于确认字段、表单、参数格式和必填项校验。",
+        "exception": "用于确认异常路径、失败恢复和错误提示。",
+        "permission": "用于确认登录态、角色权限和鉴权边界。",
+        "boundary": "用于确认长度、数值、为空、临界值等边界场景。",
+        "data": "用于确认数据一致性、导出、落库和结果回查。",
+        "performance": "用于确认耗时、并发和性能风险。",
+        "security": "用于确认敏感数据、越权和安全校验。",
+    }
+    return descriptions.get(bucket, "用于补充当前测试范围。")
+
+
+def _coverage_suggestion(bucket: str) -> str:
+    suggestions = {
+        "requirement": "补充主流程、分支流程和角色差异场景。",
+        "interface": "补充 method、url、headers、body 和响应断言。",
+        "field": "补充必填、格式、非法值和长度限制场景。",
+        "exception": "补充错误码、失败提示、超时和回退流程。",
+        "permission": "补充未登录、低权限、跨角色访问场景。",
+        "boundary": "补充最小值、最大值、临界值和空值场景。",
+        "data": "补充数据库校验、导出结果和数据一致性验证。",
+        "performance": "补充响应时间阈值、重复执行和并发场景。",
+        "security": "补充敏感字段脱敏、越权和恶意输入场景。",
+    }
+    return suggestions.get(bucket, "补充该维度相关的测试场景。")

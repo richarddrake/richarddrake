@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import ipaddress
 import json
+import os
 import re
+import socket
 import statistics
 import time
 import uuid
@@ -25,7 +28,11 @@ MAX_RESPONSE_PREVIEW_CHARS = 12000
 MAX_SUITE_STEPS = 30
 MAX_LOAD_REPEAT = 100
 MAX_LOAD_CONCURRENCY = 20
+MAX_REDIRECTS = 3
 VARIABLE_PATTERN = re.compile(r"\{\{\s*([a-zA-Z_][\w.-]*)\s*\}\}")
+SENSITIVE_HEADERS = {"authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "x-auth-token"}
+BLOCK_PRIVATE_NETWORK = os.getenv("API_RUNNER_BLOCK_PRIVATE_NETWORK", "").strip().lower() in {"1", "true", "yes", "on"}
+ALLOW_LOCALHOST = os.getenv("API_RUNNER_ALLOW_LOCALHOST", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
 async def run_api_test(payload: dict[str, Any], runtime_variables: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -51,7 +58,7 @@ async def run_api_test(payload: dict[str, Any], runtime_variables: dict[str, Any
 
     try:
         request_kwargs = _build_httpx_kwargs(prepared)
-        async with httpx.AsyncClient(timeout=prepared["timeoutSeconds"], follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=prepared["timeoutSeconds"], follow_redirects=True, max_redirects=MAX_REDIRECTS) as client:
             response = await client.request(prepared["method"], prepared["url"], **request_kwargs)
 
         actual_status = response.status_code
@@ -106,8 +113,8 @@ async def run_api_test(payload: dict[str, Any], runtime_variables: dict[str, Any
         "request": {
             "method": prepared["method"],
             "url": prepared["url"],
-            "headers": prepared["headers"],
-            "body": prepared["body"],
+            "headers": _sanitize_headers(prepared["headers"]),
+            "body": _preview(prepared["body"]),
             "bodyMode": prepared["bodyMode"],
             "formFields": prepared["formFields"],
             "files": [_safe_file_summary(item) for item in prepared["files"]],
@@ -121,7 +128,7 @@ async def run_api_test(payload: dict[str, Any], runtime_variables: dict[str, Any
         "response": {
             "statusCode": actual_status,
             "durationMs": duration_ms,
-            "headers": response_headers,
+            "headers": _sanitize_headers(response_headers),
             "bodyPreview": response_body_preview,
         },
         "assertions": assertions,
@@ -182,8 +189,8 @@ async def run_api_test_suite(payload: dict[str, Any]) -> dict[str, Any]:
         "request": {
             "method": "SUITE",
             "url": f"{len(steps)} steps",
-            "headers": variables,
-            "body": _json_dumps(steps),
+            "headers": _sanitize_headers(variables),
+            "body": _preview(_json_dumps(steps)),
             "timeoutSeconds": None,
         },
         "expected": {
@@ -256,8 +263,8 @@ async def run_api_load_test(payload: dict[str, Any]) -> dict[str, Any]:
         "request": {
             "method": "LOAD",
             "url": str(payload.get("url") or ""),
-            "headers": _as_dict(payload.get("headers")),
-            "body": str(payload.get("body") or ""),
+            "headers": _sanitize_headers(_as_dict(payload.get("headers"))),
+            "body": _preview(str(payload.get("body") or "")),
             "timeoutSeconds": payload.get("timeout_seconds") or payload.get("timeoutSeconds") or 10,
         },
         "expected": {
@@ -340,6 +347,11 @@ def _validate_request(*, method: str, url: str, body: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("接口地址必须是完整的 http:// 或 https:// URL。")
+    host = parsed.hostname or ""
+    if host in {"localhost", "127.0.0.1", "::1"} and not ALLOW_LOCALHOST:
+        raise ValueError("当前执行器已禁止 localhost/127.0.0.1/::1，请切换到受信测试环境。")
+    if BLOCK_PRIVATE_NETWORK and _is_private_host(host):
+        raise ValueError("当前执行器已禁止访问内网、回环或链路本地地址。")
     if len(body.encode("utf-8")) > MAX_BODY_BYTES:
         raise ValueError("请求体超过 2MB，当前执行器会拒绝过大的请求体。")
 
@@ -720,6 +732,32 @@ def _safe_file_summary(item: Any) -> dict[str, Any]:
         "contentType": item.get("contentType") or "application/octet-stream",
         "hasBase64": bool(item.get("base64")),
     }
+
+
+def _sanitize_headers(headers: dict[str, Any]) -> dict[str, str]:
+    sanitized: dict[str, str] = {}
+    for key, value in headers.items():
+        text = str(value)
+        sanitized[str(key)] = "***" if str(key).lower() in SENSITIVE_HEADERS else _preview(text)
+    return sanitized
+
+
+def _is_private_host(host: str) -> bool:
+    if not host:
+        return False
+    try:
+        candidates = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            resolved = {item[4][0] for item in socket.getaddrinfo(host, None)}
+            candidates = [ipaddress.ip_address(item) for item in resolved]
+        except OSError:
+            return False
+
+    for candidate in candidates:
+        if candidate.is_private or candidate.is_loopback or candidate.is_link_local or candidate.is_reserved:
+            return True
+    return False
 
 
 def _parse_form_text(value: str) -> dict[str, str]:

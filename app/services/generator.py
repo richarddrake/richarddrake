@@ -178,14 +178,17 @@ def _build_prompt(
 2. 先输出 2 到 4 行 event 为 thought 的对象，用于展示识别到的模块、流程和风险。
 3. 再输出 12 到 30 行 event 为 case 的对象，覆盖主流程、分支流程、异常流程、边界值、权限、数据一致性、兼容性、易用性、安全性、性能风险，以及输入材料中暴露出的表格字段、文档规则和链接来源。
 4. 每条 case 必须包含这些字段：
-   event, id, module, title, priority, case_type, scenario, preconditions, steps, expected_results, test_data, tags, source
+   event, id, module, title, priority, case_type, scenario, preconditions, steps, expected_results, test_data, tags, source, requirement_id
 5. 如果材料中包含接口、OpenAPI、Swagger、URL、接口文档或可推断接口行为，请给对应 case 增加 api_test 对象，结构如下：
    api_test.method, api_test.url, api_test.headers, api_test.body, api_test.bodyMode, api_test.expectedStatus, api_test.expectedContains, api_test.assertions, api_test.extractors, api_test.databaseAssertions, api_test.jsonSchema, api_test.variables, api_test.timeoutSeconds
-6. api_test.url 可以使用 {{base_url}}、{{token}} 等变量；assertions 应优先使用 status、json、header、body、time、variable 断言，并给出可验证的 expected。
-7. 对接口用例要覆盖正向、缺参、非法参数、边界、权限、重复提交、数据一致性和性能风险。
-8. preconditions、steps、expected_results、tags 必须是字符串数组。
-9. priority 只能使用 P0、P1、P2、P3。
-10. id 使用 TC-001 这种格式。
+6. 如果是接口相关场景但暂时无法形成可执行 api_test，也要保留该 case，并在 scenario 或 source 中写明缺少的信息，例如缺少接口地址、鉴权方式、测试账号或前置数据。
+7. api_test.url 可以使用 {{base_url}}、{{token}} 等变量；assertions 应优先使用 status、json、header、body、time、variable 断言，并给出可验证的 expected。
+8. 对接口用例要覆盖正向、缺参、非法参数、边界、权限、重复提交、数据一致性和性能风险。
+9. preconditions、steps、expected_results、tags 必须是字符串数组。
+10. expected_results 必须可验证，尽量写成状态码、字段值、页面状态、数据库结果或明确提示。
+11. 避免重复标题；如果场景接近，也要通过触发条件、测试数据或断言点体现差异。
+12. priority 只能使用 P0、P1、P2、P3。
+13. id 使用 TC-001 这种格式。
 
 示例行：
 {{"event":"thought","text":"识别到核心流程包含创建、提交、审批和结果通知。"}}

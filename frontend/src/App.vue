@@ -124,7 +124,11 @@
                 <img v-if="item.isImage" :src="item.url" :alt="item.file.name" />
                 <span class="file-badge">{{ item.isImage ? "IMG" : item.extension }}</span>
               </div>
-              <figcaption>{{ item.file.name }} · {{ formatFileSize(item.file.size) }}</figcaption>
+              <figcaption>
+                <strong>{{ item.file.name }}</strong>
+                <small>{{ formatFileSize(item.file.size) }} · {{ clientMaterialStatus(item).label }}</small>
+                <small>{{ clientMaterialStatus(item).detail }}</small>
+              </figcaption>
               <button type="button" aria-label="移除图片" title="移除图片" @click="removeFile(index)">
                 <X aria-hidden="true" />
               </button>
@@ -144,6 +148,17 @@
           <div class="field-group">
             <label for="references">外部文档 / 飞书链接</label>
             <textarea id="references" v-model="references" rows="4" placeholder="粘贴飞书文档、知识库、PRD、接口文档链接；私有文档建议同时导出 Word/PDF/Excel 上传，或把关键内容粘贴到上下文背景中"></textarea>
+          </div>
+
+          <div v-if="referenceInsights.length" class="reference-insights">
+            <article v-for="item in referenceInsights" :key="item.url" class="reference-card" :class="`reference-${item.state}`">
+              <div class="reference-head">
+                <span class="pill">{{ item.type }}</span>
+                <span class="pill">{{ item.status }}</span>
+              </div>
+              <strong>{{ item.url }}</strong>
+              <p>{{ item.suggestion }}</p>
+            </article>
           </div>
 
           <div class="composer-actions">
@@ -202,6 +217,16 @@
             <span :style="{ width: `${progress}%` }"></span>
           </div>
 
+          <div v-if="streamMessages.length" class="stream-insights">
+            <div class="stream-heading">
+              <span class="side-card-label">解析动态</span>
+              <strong>{{ streamMessages.length }} 条</strong>
+            </div>
+            <ul>
+              <li v-for="item in streamMessages.slice(-5)" :key="item.id">{{ item.text }}</li>
+            </ul>
+          </div>
+
           <div v-if="coverageReport" class="coverage-panel">
             <div class="coverage-head">
               <span class="side-card-label">COVERAGE MATRIX</span>
@@ -217,6 +242,19 @@
             <div v-if="(coverageReport.risks || []).length" class="risk-strip">
               <AlertTriangle aria-hidden="true" />
               <span>{{ coverageReport.risks.slice(0, 2).join("；") }}</span>
+            </div>
+            <div v-if="coverageReport.uncoveredDetails?.length" class="coverage-detail-grid">
+              <article v-for="item in coverageReport.uncoveredDetails.slice(0, 3)" :key="item.key" class="coverage-detail-card">
+                <strong>{{ item.label }}</strong>
+                <p>{{ item.reason }}</p>
+                <small>{{ item.suggestion }}</small>
+              </article>
+            </div>
+            <div v-if="coverageReport.automationSummary?.blockedExamples?.length" class="coverage-detail-grid">
+              <article v-for="item in coverageReport.automationSummary.blockedExamples.slice(0, 2)" :key="item.id || item.title" class="coverage-detail-card">
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.reason }}</p>
+              </article>
             </div>
           </div>
 
@@ -241,11 +279,23 @@
                     <span class="pill">{{ item.id || "" }}</span>
                     <span class="pill">{{ item.case_type || "功能" }}</span>
                     <span v-if="item.quality?.score" class="pill quality-pill">Q{{ item.quality.score }}</span>
+                    <span class="pill" :class="caseReadinessClass(item)">{{ caseReadiness(item).label }}</span>
                     <span v-if="caseApiConfig(item)" class="pill api-ready-pill">API</span>
                   </div>
                   <h3>{{ item.title || "未命名用例" }}</h3>
                   <div class="pill">{{ item.module || "核心流程" }}</div>
                 </header>
+                <section class="case-section">
+                  <h4>执行就绪</h4>
+                  <p>{{ caseReadiness(item).reason }}</p>
+                  <ul v-if="caseReadiness(item).missing?.length">
+                    <li v-for="field in caseReadiness(item).missing" :key="field">缺少 {{ field }}</li>
+                  </ul>
+                </section>
+                <section v-if="item.requirement_id || item.requirementId" class="case-section">
+                  <h4>需求追溯</h4>
+                  <p>{{ item.requirement_id || item.requirementId }}</p>
+                </section>
                 <section v-if="item.scenario" class="case-section">
                   <h4>场景</h4>
                   <p>{{ item.scenario }}</p>
@@ -278,12 +328,16 @@
                   <div v-if="caseExecutionMap[item.id]?.failureAnalysis && !caseExecutionMap[item.id].passed" class="failure-analysis">
                     <strong>{{ caseExecutionMap[item.id].failureAnalysis.summary }}</strong>
                     <span>{{ (caseExecutionMap[item.id].failureAnalysis.nextSteps || []).slice(0, 2).join("；") }}</span>
+                    <small v-if="caseExecutionMap[item.id].failureAnalysis.evidence?.length">证据：{{ caseExecutionMap[item.id].failureAnalysis.evidence.slice(0, 2).join("；") }}</small>
                   </div>
                 </section>
-                <section v-if="item.quality?.suggestions?.length" class="case-section quality-section">
+                <section v-if="item.quality?.deductions?.length || item.quality?.suggestions?.length" class="case-section quality-section">
                   <h4>质量建议</h4>
+                  <ul v-if="item.quality?.deductions?.length">
+                    <li v-for="deduction in item.quality.deductions.slice(0, 3)" :key="deduction.key">{{ deduction.label }} -{{ deduction.lost }}：{{ deduction.reason }}</li>
+                  </ul>
                   <ul>
-                    <li v-for="tip in item.quality.suggestions.slice(0, 2)" :key="tip">{{ tip }}</li>
+                    <li v-for="tip in (item.quality?.suggestions || []).slice(0, 2)" :key="tip">{{ tip }}</li>
                   </ul>
                 </section>
               </article>
@@ -299,6 +353,8 @@
                     <th>优先级</th>
                     <th>类型</th>
                     <th>质量</th>
+                    <th>执行状态</th>
+                    <th>需求追溯</th>
                     <th>接口</th>
                     <th>步骤</th>
                     <th>预期结果</th>
@@ -312,6 +368,8 @@
                     <td><span class="pill" :class="priorityClass(item.priority)">{{ item.priority || "" }}</span></td>
                     <td>{{ item.case_type || "" }}</td>
                     <td>{{ item.quality?.score ?? "-" }}</td>
+                    <td>{{ caseReadiness(item).label }}</td>
+                    <td>{{ item.requirement_id || item.requirementId || "-" }}</td>
                     <td>{{ caseApiConfig(item)?.method || "-" }}</td>
                     <td>
                       <template v-for="(step, index) in toList(item.steps)" :key="step">
@@ -569,6 +627,10 @@
                 <div v-if="apiRunResult.failureAnalysis && !apiRunResult.passed" class="failure-analysis api-failure-analysis">
                   <strong>{{ apiRunResult.failureAnalysis.summary }}</strong>
                   <span>{{ (apiRunResult.failureAnalysis.nextSteps || []).slice(0, 3).join("；") }}</span>
+                  <small>置信度 {{ Math.round((apiRunResult.failureAnalysis.confidence || 0) * 100) }}% · {{ apiRunResult.failureAnalysis.shouldCreateDefect ? "建议纳入缺陷跟踪" : "建议先继续排查" }}</small>
+                  <ul v-if="apiRunResult.failureAnalysis.evidence?.length" class="failure-evidence-list">
+                    <li v-for="item in apiRunResult.failureAnalysis.evidence.slice(0, 3)" :key="item">{{ item }}</li>
+                  </ul>
                 </div>
 
                 <pre class="response-preview">{{ apiRunResult.response?.bodyPreview || apiRunResult.error || "无响应体" }}</pre>
@@ -609,7 +671,12 @@
             <p class="eyebrow">Step 05</p>
             <h2 id="reportTitle">报告中心</h2>
           </div>
-          <span class="step-chip">05</span>
+          <div class="result-actions">
+            <button class="download-button" type="button" :disabled="!apiRunHistory.length && !cases.length" @click="downloadReport">
+              <Download aria-hidden="true" />
+              Markdown
+            </button>
+          </div>
         </div>
 
         <div class="report-grid">
@@ -689,7 +756,9 @@
             <div class="defect-meta">
               <span>{{ item.createdAt ? formatDate(item.createdAt) : "无时间" }}</span>
               <span>{{ item.requestLabel || "无请求信息" }}</span>
+              <span>重复 {{ item.occurrences || 1 }} 次</span>
             </div>
+            <p v-if="item.failureCategory">失败分类：{{ item.failureCategory }} · 置信度 {{ Math.round((item.confidence || 0) * 100) }}%</p>
 
             <div class="defect-controls">
               <div class="field-group compact-field">
@@ -727,7 +796,18 @@
               </ul>
             </div>
 
+            <div v-if="item.evidence?.length" class="defect-next-steps">
+              <strong>失败证据</strong>
+              <ul>
+                <li v-for="evidence in item.evidence.slice(0, 3)" :key="evidence">{{ evidence }}</li>
+              </ul>
+            </div>
+
             <div class="defect-actions">
+              <button v-if="item.latestRunId" class="secondary-button" type="button" @click="loadDefectRun(item)">
+                <History aria-hidden="true" />
+                查看执行
+              </button>
               <button class="secondary-button" type="button" @click="updateDefectRecord(item.id, 'status', item.status === 'resolved' ? 'open' : 'resolved')">
                 <CheckCircle2 aria-hidden="true" />
                 {{ item.status === "resolved" ? "重新打开" : "标记已解决" }}
@@ -901,6 +981,7 @@ const isOpenApiImporting = ref(false);
 const caseExecutionMap = ref({});
 const executingCaseId = ref("");
 const defectRecords = ref({});
+const streamMessages = ref([]);
 let toastTimer = null;
 
 const visibleCases = computed(() => {
@@ -1026,6 +1107,8 @@ const defectToolbarText = computed(() => {
   return `共 ${defectItems.value.length} 项失败记录，当前 ${defectOpenCount.value} 项待处理`;
 });
 
+const referenceInsights = computed(() => analyzeReferenceLinks(references.value));
+
 onMounted(() => {
   document.body.classList.add("dark");
   loadDefectRecords();
@@ -1132,6 +1215,7 @@ function prepareGenerationState() {
   downloadUrl.value = "";
   coverageReport.value = null;
   caseExecutionMap.value = {};
+  streamMessages.value = [];
   statusText.value = "生成中";
   progress.value = 6;
 }
@@ -1188,6 +1272,7 @@ function processSseBlock(block) {
 function handleEvent(eventName, data) {
   if (eventName === "status" || eventName === "thought") {
     statusText.value = data.text || "生成中";
+    recordStreamMessage(data.text || "生成中");
     progress.value = Math.min(86, 12 + cases.value.length * 4);
     return;
   }
@@ -1235,6 +1320,7 @@ function resetAll() {
   downloadUrl.value = "";
   coverageReport.value = null;
   caseExecutionMap.value = {};
+  streamMessages.value = [];
   requirements.value = "";
   context.value = "";
   references.value = "";
@@ -1590,19 +1676,34 @@ function syncDefectCandidates() {
     const id = defectRecordId(item);
     const existing = merged[id] || {};
     const failure = item.failureAnalysis || {};
+    const evidence = Array.isArray(failure.evidence) ? failure.evidence : [];
+    const failedAssertions = (item.assertions || []).filter((entry) => entry && entry.passed === false).map((entry) => entry.name).slice(0, 5);
+    const previousRuns = Array.isArray(existing.runIds) ? existing.runIds : [];
+    const nextRunIds = item.runId ? Array.from(new Set([...previousRuns, item.runId])) : previousRuns;
     merged[id] = {
       id,
       title: item.caseTitle || item.name || `${item.request?.method || ""} ${item.request?.url || ""}`.trim() || "未命名失败项",
       source: item.caseTitle ? "生成用例执行" : runTypeLabel(item.runType),
       summary: failure.summary || item.error || item.response?.bodyPreview || "执行失败",
       requestLabel: `${item.request?.method || "-"} ${item.request?.url || "-"}`,
+      latestRunId: item.runId || existing.latestRunId || "",
+      runIds: nextRunIds,
+      caseIds: Array.from(new Set([...(existing.caseIds || []), ...(item.caseId ? [item.caseId] : [])])),
+      responseStatus: item.response?.statusCode ?? existing.responseStatus ?? null,
+      responsePreview: item.response?.bodyPreview || existing.responsePreview || "",
+      failedAssertions,
+      failureCategory: failure.category || existing.failureCategory || "",
+      confidence: failure.confidence || existing.confidence || 0,
+      evidence,
+      shouldCreateDefect: Boolean(failure.shouldCreateDefect ?? existing.shouldCreateDefect),
       nextSteps: Array.isArray(failure.nextSteps) ? failure.nextSteps : [],
       createdAt: item.createdAt || existing.createdAt || "",
       status: existing.status || "open",
       severity: existing.severity || inferDefectSeverity(item),
       owner: existing.owner || "",
       note: existing.note || "",
-      updatedAt: existing.updatedAt || item.createdAt || new Date().toISOString(),
+      occurrences: Math.max(existing.occurrences || 0, nextRunIds.length || 1),
+      updatedAt: item.createdAt || new Date().toISOString(),
     };
   });
 
@@ -1611,13 +1712,15 @@ function syncDefectCandidates() {
 }
 
 function defectRecordId(item) {
-  if (item.runId) {
-    return `run:${item.runId}`;
-  }
-  if (item.caseId) {
-    return `case:${item.caseId}`;
-  }
-  return `fallback:${item.name || item.caseTitle || item.request?.url || Date.now()}`;
+  const failure = item.failureAnalysis || {};
+  const parts = [
+    item.caseId || item.caseTitle || item.name || "",
+    item.request?.method || "",
+    item.request?.url || "",
+    failure.category || "",
+    ((item.assertions || []).filter((entry) => entry && entry.passed === false).map((entry) => entry.name).join("|")) || "",
+  ];
+  return `defect:${parts.join("::") || Date.now()}`;
 }
 
 function inferDefectSeverity(item) {
@@ -1682,6 +1785,7 @@ async function loadHistoryDetail(sessionId) {
     selectedHistoryId.value = sessionId;
     cases.value = detail.cases || [];
     caseExecutionMap.value = {};
+    streamMessages.value = [];
     coverageReport.value = await analyzeCurrentCoverage(cases.value);
     downloadUrl.value = detail.downloadUrl || "";
     statusText.value = `已加载历史 ${cases.value.length} 条`;
@@ -1710,6 +1814,190 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => {
     toastMessage.value = "";
   }, 2600);
+}
+
+function recordStreamMessage(text) {
+  if (!text) {
+    return;
+  }
+  streamMessages.value = [
+    ...streamMessages.value,
+    {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      text: String(text),
+    },
+  ].slice(-12);
+}
+
+function clientMaterialStatus(item) {
+  if (item?.isImage) {
+    return {
+      label: "视觉材料",
+      detail: "生成时会把图片作为多模态输入发送给模型。",
+    };
+  }
+  const extension = String(item?.extension || "").toLowerCase();
+  if (["xlsx", "xlsm", "xls", "csv", "tsv"].includes(extension)) {
+    return {
+      label: "表格抽取",
+      detail: "上传后会优先抽取表格文本和字段结构。",
+    };
+  }
+  if (["docx", "pdf"].includes(extension)) {
+    return {
+      label: "文档抽取",
+      detail: "上传后会尝试提取正文，再并入生成上下文。",
+    };
+  }
+  if (["json", "yaml", "yml", "md", "markdown", "txt", "html", "htm", "log", "feature"].includes(extension)) {
+    return {
+      label: "文本解析",
+      detail: "上传后会读取文本内容并作为规则来源。",
+    };
+  }
+  return {
+    label: "文件线索",
+    detail: "当前类型可能只保留文件名作为上下文提示。",
+  };
+}
+
+function analyzeReferenceLinks(text) {
+  const matches = String(text || "").match(/https?:\/\/[^\s)]+/g) || [];
+  return matches.map((url) => {
+    const lower = url.toLowerCase();
+    if (lower.includes("openapi.json") || lower.endsWith(".json") || lower.endsWith(".yaml") || lower.endsWith(".yml")) {
+      return {
+        url,
+        type: "OpenAPI",
+        status: "可结构化解析",
+        state: "good",
+        suggestion: "这是最适合导入 Swagger 模块的链接类型，可直接生成接口用例。",
+      };
+    }
+    if (lower.includes("swagger-ui") || lower.includes("/swagger") || lower.includes("/docs")) {
+      return {
+        url,
+        type: "Swagger UI",
+        status: "建议换源",
+        state: "warn",
+        suggestion: "优先改填 openapi.json / swagger.json 地址，页面链接本身通常不适合直接解析。",
+      };
+    }
+    if (lower.includes("feishu.cn") || lower.includes("larksuite.com")) {
+      return {
+        url,
+        type: "飞书文档",
+        status: "可能需要登录",
+        state: "warn",
+        suggestion: "私有飞书通常无法直接读取正文，建议同时上传导出的 Word/PDF 或粘贴关键内容。",
+      };
+    }
+    if (lower.includes("yuque.com")) {
+      return {
+        url,
+        type: "语雀",
+        status: "可能需要登录",
+        state: "warn",
+        suggestion: "如果是私有知识库，平台更适合读取你导出的文件或你手动粘贴的关键段落。",
+      };
+    }
+    if (lower.includes("confluence")) {
+      return {
+        url,
+        type: "Confluence",
+        status: "可能需要登录",
+        state: "warn",
+        suggestion: "建议确认是否可公开访问；若不可公开，请上传导出文件。",
+      };
+    }
+    if (lower.includes("apifox") || lower.includes("yapi")) {
+      return {
+        url,
+        type: "接口平台",
+        status: "优先找 OpenAPI",
+        state: "warn",
+        suggestion: "这类页面更适合作为线索，最好补充 OpenAPI JSON/YAML 地址。",
+      };
+    }
+    return {
+      url,
+      type: "网页链接",
+      status: "仅作辅助上下文",
+      state: "info",
+      suggestion: "普通网页可能只能作为背景参考；若要稳定生成用例，建议补充正文或导出文件。",
+    };
+  });
+}
+
+function caseReadiness(item) {
+  return (
+    item?.quality?.executionReadiness || {
+      kind: caseApiConfig(item) ? "api" : "manual",
+      ready: Boolean(caseApiConfig(item)),
+      status: caseApiConfig(item) ? "ready" : "manual",
+      label: caseApiConfig(item) ? "可执行" : "手工用例",
+      reason: caseApiConfig(item) ? "接口配置已存在，可直接执行。" : "当前没有接口执行配置。",
+      missing: caseApiConfig(item) ? [] : ["api_test"],
+    }
+  );
+}
+
+function caseReadinessClass(item) {
+  const status = caseReadiness(item).status;
+  if (status === "ready") {
+    return "execution-ready-pill";
+  }
+  if (status === "needs_info") {
+    return "execution-warn-pill";
+  }
+  return "execution-manual-pill";
+}
+
+function downloadReport() {
+  const markdown = createReportMarkdown();
+  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.download = `test-report-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function createReportMarkdown() {
+  const lines = [
+    "# 测试报告",
+    "",
+    `- 生成时间：${formatDate(new Date().toISOString())}`,
+    `- 当前用例数：${cases.value.length}`,
+    `- 可执行接口：${executableCaseCount.value}`,
+    `- 最近执行次数：${apiRunHistory.value.length}`,
+    `- 执行通过率：${reportSummaryCards.value.find((item) => item.label === "执行通过率")?.value || "-"}`,
+    `- 质量均分：${coverageReport.value?.averageQualityScore ?? "-"}`,
+    "",
+    "## 覆盖风险",
+    ...((coverageReport.value?.risks || []).map((item) => `- ${item}`)),
+    "",
+    "## 未覆盖项",
+    ...((coverageReport.value?.uncoveredDetails || []).map((item) => `- ${item.label}：${item.reason}；建议：${item.suggestion}`)),
+    "",
+    "## 最近执行",
+    ...recentReportRuns.value.map((item) => `- [${item.passed ? "PASS" : "FAIL"}] ${item.name || `${item.request?.method || ""} ${item.request?.url || ""}`} · HTTP ${item.response?.statusCode ?? "-"} · ${item.response?.durationMs ?? 0} ms`),
+    "",
+    "## 失败项跟踪",
+    ...defectItems.value.map((item) => `- ${item.title} | 状态：${defectStatusLabel(item.status)} | 优先级：${item.severity} | 重复：${item.occurrences || 1} 次`),
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+function loadDefectRun(item) {
+  const matched = apiRunHistory.value.find((run) => run.runId === item.latestRunId);
+  if (!matched) {
+    showToast("没有找到对应的执行记录。");
+    return;
+  }
+  loadApiRun(matched);
+  window.location.hash = "#apiRunnerTitle";
 }
 
 function createDefaultApiTest() {

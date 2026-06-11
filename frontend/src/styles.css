@@ -521,13 +521,64 @@ h2 {
 }
 
 .preview-card figcaption {
-  height: 28px;
+  display: grid;
+  gap: 2px;
+  min-height: 52px;
   padding: 6px 8px;
   color: var(--muted);
   font-size: 12px;
   overflow: hidden;
+}
+
+.preview-card figcaption strong,
+.preview-card figcaption small {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.reference-insights {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.reference-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-strong), transparent 4%);
+}
+
+.reference-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reference-card strong,
+.reference-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.reference-card p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.reference-good {
+  border-color: color-mix(in srgb, var(--teal), transparent 35%);
+}
+
+.reference-warn {
+  border-color: color-mix(in srgb, var(--amber), transparent 28%);
+}
+
+.reference-info {
+  border-color: color-mix(in srgb, var(--cyan), transparent 38%);
 }
 
 .preview-card button {
@@ -741,6 +792,30 @@ input[type="search"]:focus,
   transition: width 0.35s ease;
 }
 
+.stream-insights {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-soft), transparent 10%);
+}
+
+.stream-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.stream-insights ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .coverage-panel {
   display: grid;
   gap: 12px;
@@ -825,6 +900,33 @@ input[type="search"]:focus,
   height: 17px;
   flex: 0 0 auto;
   margin-top: 2px;
+}
+
+.coverage-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.coverage-detail-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-soft), transparent 6%);
+}
+
+.coverage-detail-card strong,
+.coverage-detail-card p,
+.coverage-detail-card small {
+  margin: 0;
+}
+
+.coverage-detail-card p,
+.coverage-detail-card small {
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .toolbar {
@@ -973,6 +1075,24 @@ input[type="search"]:focus,
   background: linear-gradient(90deg, var(--cyan), var(--violet));
 }
 
+.execution-ready-pill {
+  color: #071016;
+  border-color: transparent;
+  background: linear-gradient(90deg, var(--teal), var(--lime));
+}
+
+.execution-warn-pill {
+  color: #1f1700;
+  border-color: transparent;
+  background: var(--amber);
+}
+
+.execution-manual-pill {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--line-strong), transparent 24%);
+  background: color-mix(in srgb, var(--surface-soft), transparent 12%);
+}
+
 .case-section {
   display: grid;
   gap: 6px;
@@ -1041,7 +1161,8 @@ input[type="search"]:focus,
 }
 
 .case-execution span,
-.failure-analysis span {
+.failure-analysis span,
+.failure-analysis small {
   color: var(--muted);
   font-size: 12px;
 }
@@ -1059,6 +1180,13 @@ input[type="search"]:focus,
 
 .api-failure-analysis {
   margin: 2px 0;
+}
+
+.failure-evidence-list {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .case-section p {
