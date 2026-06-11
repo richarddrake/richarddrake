@@ -20,6 +20,7 @@ scripts/                   Windows 启动和端口释放脚本
 
 ## 文档入口
 
+- 项目协作规则：[`AGENTS.md`](AGENTS.md)
 - 产品汇报版文档：[`docs/PRODUCT_REPORT.md`](docs/PRODUCT_REPORT.md)
 - 多源材料输入说明：[`docs/MATERIAL_INPUTS.md`](docs/MATERIAL_INPUTS.md)
 - 模型接入配置说明：[`docs/MODEL_SETUP.md`](docs/MODEL_SETUP.md)
