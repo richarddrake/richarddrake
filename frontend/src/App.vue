@@ -672,7 +672,11 @@
             <h2 id="reportTitle">报告中心</h2>
           </div>
           <div class="result-actions">
-            <button class="download-button" type="button" :disabled="!apiRunHistory.length && !cases.length" @click="downloadReport">
+            <button class="download-button" type="button" :disabled="!allRunRecords.length && !cases.length" @click="downloadReport('html')">
+              <Download aria-hidden="true" />
+              HTML
+            </button>
+            <button class="download-button" type="button" :disabled="!allRunRecords.length && !cases.length" @click="downloadReport('md')">
               <Download aria-hidden="true" />
               Markdown
             </button>
@@ -719,6 +723,70 @@
             </article>
           </div>
           <div v-else class="empty-state report-empty">等待接口执行后汇总报告</div>
+        </div>
+
+        <div class="report-detail-grid">
+          <article class="report-detail-card">
+            <h3>测试环境</h3>
+            <ul>
+              <li v-for="item in reportEnvironmentItems" :key="item.label"><strong>{{ item.label }}：</strong>{{ item.value }}</li>
+            </ul>
+          </article>
+          <article class="report-detail-card">
+            <h3>测试范围</h3>
+            <ul>
+              <li v-for="item in reportScopeItems" :key="item.label"><strong>{{ item.label }}：</strong>{{ item.value }}</li>
+            </ul>
+          </article>
+          <article class="report-detail-card">
+            <h3>用例执行统计</h3>
+            <ul>
+              <li><strong>执行总次数：</strong>{{ reportMetrics.totalRuns }}</li>
+              <li><strong>用例总数：</strong>{{ reportMetrics.totalCases }}</li>
+              <li><strong>通过数：</strong>{{ reportMetrics.passedRuns }}</li>
+              <li><strong>失败数：</strong>{{ reportMetrics.failedRuns }}</li>
+              <li><strong>跳过数：</strong>{{ reportMetrics.skippedRuns }}</li>
+            </ul>
+          </article>
+          <article class="report-detail-card">
+            <h3>接口执行统计</h3>
+            <ul>
+              <li><strong>通过率：</strong>{{ reportMetrics.passRate }}</li>
+              <li><strong>平均响应时间：</strong>{{ reportMetrics.averageDuration }} ms</li>
+              <li><strong>最慢接口：</strong>{{ reportMetrics.slowestInterface }}</li>
+              <li><strong>P0/P1 失败：</strong>{{ reportMetrics.p0Failures }}/{{ reportMetrics.p1Failures }}</li>
+            </ul>
+          </article>
+          <article class="report-detail-card">
+            <h3>失败分析</h3>
+            <ul v-if="reportFailureCategoryItems.length">
+              <li v-for="item in reportFailureCategoryItems.slice(0, 5)" :key="item.label"><strong>{{ item.label }}：</strong>{{ item.value }}</li>
+            </ul>
+            <p v-else>当前没有失败分类数据。</p>
+          </article>
+          <article class="report-detail-card">
+            <h3>慢接口统计</h3>
+            <ul v-if="reportSlowRunItems.length">
+              <li v-for="item in reportSlowRunItems.slice(0, 3)" :key="item.runId || item.label"><strong>{{ item.durationMs }} ms：</strong>{{ item.label }}</li>
+            </ul>
+            <p v-else>当前没有可统计的慢接口。</p>
+          </article>
+          <article class="report-detail-card">
+            <h3>数据库校验结果</h3>
+            <ul>
+              <li><strong>总校验数：</strong>{{ reportDatabaseSummary.total }}</li>
+              <li><strong>通过数：</strong>{{ reportDatabaseSummary.passed }}</li>
+              <li><strong>失败数：</strong>{{ reportDatabaseSummary.failed }}</li>
+            </ul>
+            <p v-if="reportDatabaseSummary.recentFailures.length">最近失败：{{ reportDatabaseSummary.recentFailures.map((item) => item.name).join("、") }}</p>
+          </article>
+          <article class="report-detail-card report-conclusion-card">
+            <h3>测试结论</h3>
+            <p>{{ reportConclusionText }}</p>
+            <ul v-if="coverageReport?.risks?.length">
+              <li v-for="item in coverageReport.risks.slice(0, 3)" :key="item">{{ item }}</li>
+            </ul>
+          </article>
         </div>
       </section>
 
@@ -979,6 +1047,7 @@ const openApiBaseUrl = ref(API_BASE_URL || "http://127.0.0.1:8000");
 const openApiSummary = ref({});
 const isOpenApiImporting = ref(false);
 const caseExecutionMap = ref({});
+const localRunDetails = ref({});
 const executingCaseId = ref("");
 const defectRecords = ref({});
 const streamMessages = ref([]);
@@ -1046,9 +1115,27 @@ const advancedConfigCount = computed(() => {
   return fields.filter((value) => String(value || "").trim() && String(value || "").trim() !== "[]" && String(value || "").trim() !== "{}").length;
 });
 
+const allRunRecords = computed(() => {
+  const merged = new Map();
+  const candidates = [
+    ...apiRunHistory.value,
+    ...Object.values(localRunDetails.value || {}),
+    ...Object.values(caseExecutionMap.value || {}),
+  ];
+  for (const item of candidates) {
+    if (!item) {
+      continue;
+    }
+    const key = item.runId || `${item.name || ""}-${item.createdAt || ""}-${item.request?.url || ""}`;
+    const existing = merged.get(key);
+    merged.set(key, mergeRunRecord(existing, item));
+  }
+  return Array.from(merged.values()).sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+});
+
 const reportSummaryCards = computed(() => {
-  const totalRuns = apiRunHistory.value.length;
-  const passedRuns = apiRunHistory.value.filter((item) => item.passed).length;
+  const totalRuns = allRunRecords.value.length;
+  const passedRuns = allRunRecords.value.filter((item) => item.passed).length;
   const failedRuns = totalRuns - passedRuns;
   const passRate = totalRuns ? `${Math.round((passedRuns / totalRuns) * 100)}%` : "-";
   const averageQuality = coverageReport.value?.averageQualityScore ?? "-";
@@ -1063,22 +1150,22 @@ const reportSummaryCards = computed(() => {
   ];
 });
 
-const recentReportRuns = computed(() => apiRunHistory.value.slice(0, 6));
+const recentReportRuns = computed(() => allRunRecords.value.slice(0, 6));
 
 const reportOverviewText = computed(() => {
-  if (!apiRunHistory.value.length) {
+  if (!allRunRecords.value.length) {
     return "等待执行数据";
   }
-  const latest = apiRunHistory.value[0];
+  const latest = allRunRecords.value[0];
   const label = latest.name || `${latest.request?.method || ""} ${latest.request?.url || ""}`.trim();
   return label || "最近一次执行";
 });
 
 const reportOverviewHint = computed(() => {
-  if (!apiRunHistory.value.length) {
+  if (!allRunRecords.value.length) {
     return "先完成一轮接口执行，这里会自动汇总最近结果。";
   }
-  const latest = apiRunHistory.value[0];
+  const latest = allRunRecords.value[0];
   return `${latest.passed ? "最近一次执行通过" : "最近一次执行失败"}，耗时 ${latest.response?.durationMs ?? 0} ms。`;
 });
 
@@ -1108,6 +1195,13 @@ const defectToolbarText = computed(() => {
 });
 
 const referenceInsights = computed(() => analyzeReferenceLinks(references.value));
+const reportMetrics = computed(() => buildReportMetrics());
+const reportEnvironmentItems = computed(() => buildReportEnvironmentItems());
+const reportScopeItems = computed(() => buildReportScopeItems());
+const reportFailureCategoryItems = computed(() => buildReportFailureCategoryItems());
+const reportSlowRunItems = computed(() => buildReportSlowRunItems());
+const reportDatabaseSummary = computed(() => buildReportDatabaseSummary());
+const reportConclusionText = computed(() => buildReportConclusion());
 
 onMounted(() => {
   document.body.classList.add("dark");
@@ -1461,6 +1555,7 @@ async function runApiTest() {
 
     const data = await response.json();
     apiRunResult.value = data;
+    rememberRunDetail(data);
     showToast(data.passed ? "接口测试执行通过。" : "接口测试执行未通过。");
     fetchApiRunHistory();
   } catch (error) {
@@ -1491,6 +1586,7 @@ async function executeGeneratedCase(item) {
       throw new Error(await readErrorMessage(response));
     }
     const data = await response.json();
+    rememberRunDetail(data);
     caseExecutionMap.value = { ...caseExecutionMap.value, [caseId]: data };
     cases.value = cases.value.map((current) =>
       (current.id || current.title) === caseId
@@ -1556,6 +1652,7 @@ async function runApiSuite() {
     }
     const data = await response.json();
     apiRunResult.value = data;
+    rememberRunDetail(data);
     showToast(data.passed ? "接口用例集执行通过。" : "接口用例集存在失败。");
     fetchApiRunHistory();
   } catch (error) {
@@ -1597,6 +1694,7 @@ async function runApiLoad() {
     }
     const data = await response.json();
     apiRunResult.value = data;
+    rememberRunDetail(data);
     showToast(data.passed ? "并发执行全部通过。" : "并发执行存在失败。");
     fetchApiRunHistory();
   } catch (error) {
@@ -1621,7 +1719,7 @@ async function fetchApiRunHistory() {
 }
 
 function loadApiRun(item) {
-  apiRunResult.value = item;
+  apiRunResult.value = mergeRunRecord(item, localRunDetails.value[item.runId] || null);
   apiTest.value = {
     ...createDefaultApiTest(),
     name: item.name || "",
@@ -1658,19 +1756,7 @@ function persistDefectRecords() {
 
 function syncDefectCandidates() {
   const merged = { ...defectRecords.value };
-  const candidates = [];
-
-  apiRunHistory.value.forEach((item) => {
-    if (item?.passed === false) {
-      candidates.push(item);
-    }
-  });
-
-  Object.values(caseExecutionMap.value || {}).forEach((item) => {
-    if (item?.passed === false) {
-      candidates.push(item);
-    }
-  });
+  const candidates = allRunRecords.value.filter((item) => item?.passed === false);
 
   candidates.forEach((item) => {
     const id = defectRecordId(item);
@@ -1816,6 +1902,50 @@ function showToast(message) {
   }, 2600);
 }
 
+function rememberRunDetail(run) {
+  if (!run?.runId) {
+    return;
+  }
+  localRunDetails.value = {
+    ...localRunDetails.value,
+    [run.runId]: mergeRunRecord(localRunDetails.value[run.runId] || null, run),
+  };
+}
+
+function mergeRunRecord(base, override) {
+  if (!base) {
+    return override ? JSON.parse(JSON.stringify(override)) : null;
+  }
+  if (!override) {
+    return JSON.parse(JSON.stringify(base));
+  }
+  return {
+    ...base,
+    ...override,
+    request: {
+      ...(base.request || {}),
+      ...(override.request || {}),
+    },
+    expected: {
+      ...(base.expected || {}),
+      ...(override.expected || {}),
+    },
+    response: {
+      ...(base.response || {}),
+      ...(override.response || {}),
+    },
+    summary: {
+      ...(base.summary || {}),
+      ...(override.summary || {}),
+    },
+    failureAnalysis: override.failureAnalysis || base.failureAnalysis || null,
+    databaseChecks: override.databaseChecks || base.databaseChecks || [],
+    extractions: override.extractions || base.extractions || [],
+    variables: override.variables || base.variables || {},
+    assertions: override.assertions || base.assertions || [],
+  };
+}
+
 function recordStreamMessage(text) {
   if (!text) {
     return;
@@ -1929,6 +2059,176 @@ function analyzeReferenceLinks(text) {
   });
 }
 
+function buildReportMetrics() {
+  const runs = allRunRecords.value;
+  const totalRuns = runs.length;
+  const passedRuns = runs.filter((item) => item.passed).length;
+  const failedRuns = runs.filter((item) => item.passed === false).length;
+  const skippedRuns = Math.max(0, executableCaseCount.value - runs.filter((item) => item.caseId || item.caseTitle).length);
+  const interfaceCoverage = Math.round(((coverageReport.value?.coverage?.interface?.ratio || 0) * 100));
+  const requirementCoverage = Math.round(((coverageReport.value?.coverage?.requirement?.ratio || 0) * 100));
+  const exceptionCoverage = Math.round(((coverageReport.value?.coverage?.exception?.ratio || 0) * 100));
+  const automationReadyRatio = Math.round(((coverageReport.value?.automationRatio || 0) * 100));
+  const averageQuality = coverageReport.value?.averageQualityScore ?? "-";
+  const failedGeneratedCases = runs.filter((item) => item.passed === false && (item.caseId || item.caseTitle));
+  const p0Failures = failedGeneratedCases.filter((item) => findCasePriority(item) === "P0").length;
+  const p1Failures = failedGeneratedCases.filter((item) => findCasePriority(item) === "P1").length;
+  const durations = runs.map((item) => Number(item.response?.durationMs || 0)).filter((item) => item > 0);
+  const averageDuration = durations.length ? Math.round(durations.reduce((sum, item) => sum + item, 0) / durations.length) : 0;
+  const slowest = buildReportSlowRunItems()[0];
+  return {
+    totalRuns,
+    totalCases: cases.value.length,
+    passedRuns,
+    failedRuns,
+    skippedRuns,
+    passRate: totalRuns ? `${Math.round((passedRuns / totalRuns) * 100)}%` : "-",
+    interfaceCoverage: `${interfaceCoverage}%`,
+    requirementCoverage: `${requirementCoverage}%`,
+    exceptionCoverage: `${exceptionCoverage}%`,
+    automationReadyRatio: `${automationReadyRatio}%`,
+    averageQuality,
+    p0Failures,
+    p1Failures,
+    defectCount: defectItems.value.length,
+    unresolvedDefects: defectOpenCount.value,
+    averageDuration,
+    slowestInterface: slowest ? `${slowest.label} · ${slowest.durationMs} ms` : "-",
+  };
+}
+
+function buildReportEnvironmentItems() {
+  const baseUrl = API_BASE_URL || openApiBaseUrl.value || extractBaseUrl(apiTest.value.url) || "未配置";
+  return [
+    { label: "接口基础地址", value: baseUrl },
+    { label: "数据库状态", value: databaseMessage.value || "未检测" },
+    { label: "历史记录", value: databaseConnected.value ? "MySQL 已连接" : "MySQL 未连接" },
+    { label: "当前报告来源", value: openApiSummary.value.title || "当前工作台 / 接口执行结果" },
+  ];
+}
+
+function buildReportScopeItems() {
+  const modules = Array.from(new Set(cases.value.map((item) => item.module).filter(Boolean)));
+  const priorities = priorityMix.value || "-";
+  return [
+    { label: "用例模块范围", value: modules.slice(0, 4).join("、") || "当前未生成用例" },
+    { label: "优先级分布", value: priorities },
+    { label: "可执行接口用例", value: `${executableCaseCount.value}/${cases.value.length || 0}` },
+    { label: "测试范围说明", value: `${cases.value.length || 0} 条用例，覆盖主流程、异常、边界和权限等维度` },
+  ];
+}
+
+function buildReportFailureCategoryItems() {
+  const counts = {};
+  for (const item of allRunRecords.value.filter((run) => run.passed === false)) {
+    const key = inferRunFailureCategory(item);
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .map(([key, value]) => ({ label: failureCategoryLabel(key), value }))
+    .sort((left, right) => right.value - left.value);
+}
+
+function buildReportSlowRunItems() {
+  return allRunRecords.value
+    .map((item) => ({
+      runId: item.runId,
+      label: item.name || `${item.request?.method || ""} ${item.request?.url || ""}`.trim() || "未命名执行",
+      durationMs: Number(item.response?.durationMs || 0),
+      statusCode: item.response?.statusCode ?? "-",
+      method: item.request?.method || "-",
+      url: item.request?.url || "-",
+    }))
+    .filter((item) => item.durationMs > 0)
+    .sort((left, right) => right.durationMs - left.durationMs)
+    .slice(0, 5);
+}
+
+function buildReportDatabaseSummary() {
+  const checks = allRunRecords.value.flatMap((item) => item.databaseChecks || []);
+  const passed = checks.filter((item) => item.passed).length;
+  const failed = checks.filter((item) => item.passed === false).length;
+  const recentFailures = checks.filter((item) => item.passed === false).slice(0, 4);
+  return {
+    total: checks.length,
+    passed,
+    failed,
+    recentFailures,
+  };
+}
+
+function buildReportConclusion() {
+  const metrics = reportMetrics.value;
+  const categoryTop = buildReportFailureCategoryItems()[0];
+  const riskCount = (coverageReport.value?.risks || []).length;
+  if (metrics.p0Failures > 0) {
+    return `当前存在 ${metrics.p0Failures} 条 P0 失败，用例风险较高，建议阻塞上线并优先修复。`;
+  }
+  if (metrics.failedRuns > 0) {
+    return `当前共有 ${metrics.failedRuns} 条执行失败，主要集中在${categoryTop?.label || "失败场景"}，建议修复后再做回归。`;
+  }
+  if (riskCount > 0) {
+    return `当前执行结果整体通过，但仍有 ${riskCount} 项覆盖风险，建议补齐后再作为正式结论。`;
+  }
+  return "当前执行结果整体稳定，未发现阻塞性失败，可以进入下一轮回归或发布评审。";
+}
+
+function extractBaseUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return "";
+  }
+}
+
+function findCasePriority(run) {
+  const matched = cases.value.find((item) => item.id === run.caseId || item.title === run.caseTitle || item.title === run.name);
+  return matched?.priority || "";
+}
+
+function inferRunFailureCategory(run) {
+  if (run.failureAnalysis?.category) {
+    return run.failureAnalysis.category;
+  }
+  const status = Number(run.response?.statusCode || 0);
+  const error = String(run.error || "").toLowerCase();
+  if (error.includes("超时") || error.includes("timeout") || error.includes("connect")) {
+    return "environment";
+  }
+  if (status === 401 || status === 403) {
+    return "auth";
+  }
+  if (status === 400 || status === 422) {
+    return "request_params";
+  }
+  if (status === 404) {
+    return "api_contract_changed";
+  }
+  if (status >= 500) {
+    return "backend_bug";
+  }
+  const databaseAssertion = (run.assertions || []).some((item) => item.category === "database" && item.passed === false);
+  if (databaseAssertion) {
+    return "database_consistency";
+  }
+  return "assertion";
+}
+
+function failureCategoryLabel(category) {
+  const labels = {
+    environment: "环境问题",
+    auth: "鉴权问题",
+    request_params: "参数问题",
+    assertion: "断言问题",
+    api_contract_changed: "契约变化",
+    backend_bug: "后端缺陷",
+    database_consistency: "数据库一致性",
+    passed: "执行通过",
+  };
+  return labels[category] || "其他";
+}
+
 function caseReadiness(item) {
   return (
     item?.quality?.executionReadiness || {
@@ -1953,41 +2253,271 @@ function caseReadinessClass(item) {
   return "execution-manual-pill";
 }
 
-function downloadReport() {
-  const markdown = createReportMarkdown();
-  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+function downloadReport(format = "md") {
+  const content = format === "html" ? createReportHtml() : createReportMarkdown();
+  const mimeType = format === "html" ? "text/html;charset=utf-8" : "text/markdown;charset=utf-8";
+  const extension = format === "html" ? "html" : "md";
+  const blob = new Blob([content], { type: mimeType });
   const link = document.createElement("a");
   const url = URL.createObjectURL(blob);
   link.href = url;
-  link.download = `test-report-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.md`;
+  link.download = `test-report-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.${extension}`;
   link.click();
   URL.revokeObjectURL(url);
 }
 
 function createReportMarkdown() {
+  const model = buildReportModel();
   const lines = [
     "# 测试报告",
     "",
-    `- 生成时间：${formatDate(new Date().toISOString())}`,
-    `- 当前用例数：${cases.value.length}`,
-    `- 可执行接口：${executableCaseCount.value}`,
-    `- 最近执行次数：${apiRunHistory.value.length}`,
-    `- 执行通过率：${reportSummaryCards.value.find((item) => item.label === "执行通过率")?.value || "-"}`,
-    `- 质量均分：${coverageReport.value?.averageQualityScore ?? "-"}`,
+    `- 生成时间：${model.generatedAt}`,
+    `- 执行总次数：${model.metrics.totalRuns}`,
+    `- 用例总数：${model.metrics.totalCases}`,
+    `- 通过数：${model.metrics.passedRuns}`,
+    `- 失败数：${model.metrics.failedRuns}`,
+    `- 跳过数：${model.metrics.skippedRuns}`,
+    `- 通过率：${model.metrics.passRate}`,
+    `- 接口覆盖率：${model.metrics.interfaceCoverage}`,
+    `- 需求覆盖率：${model.metrics.requirementCoverage}`,
+    `- 异常场景覆盖率：${model.metrics.exceptionCoverage}`,
+    `- 自动化就绪比例：${model.metrics.automationReadyRatio}`,
+    `- 质量平均分：${model.metrics.averageQuality}`,
     "",
-    "## 覆盖风险",
-    ...((coverageReport.value?.risks || []).map((item) => `- ${item}`)),
+    "## 报告概览",
+    ...Object.entries(model.metrics).map(([key, value]) => `- ${metricLabel(key)}：${value}`),
     "",
-    "## 未覆盖项",
-    ...((coverageReport.value?.uncoveredDetails || []).map((item) => `- ${item.label}：${item.reason}；建议：${item.suggestion}`)),
+    "## 测试环境",
+    ...model.environment.map((item) => `- ${item.label}：${item.value}`),
     "",
-    "## 最近执行",
-    ...recentReportRuns.value.map((item) => `- [${item.passed ? "PASS" : "FAIL"}] ${item.name || `${item.request?.method || ""} ${item.request?.url || ""}`} · HTTP ${item.response?.statusCode ?? "-"} · ${item.response?.durationMs ?? 0} ms`),
+    "## 测试范围",
+    ...model.scope.map((item) => `- ${item.label}：${item.value}`),
     "",
-    "## 失败项跟踪",
-    ...defectItems.value.map((item) => `- ${item.title} | 状态：${defectStatusLabel(item.status)} | 优先级：${item.severity} | 重复：${item.occurrences || 1} 次`),
+    "## 用例执行统计",
+    ...model.caseExecutionStats.map((item) => `- ${item.label}：${item.value}`),
+    "",
+    "## 接口执行统计",
+    ...model.apiExecutionStats.map((item) => `- ${item.label}：${item.value}`),
+    "",
+    "## 覆盖率分析",
+    ...model.coverageAnalysis.map((item) => `- ${item.label}：${item.value}${item.note ? `（${item.note}）` : ""}`),
+    "",
+    "## 用例质量分析",
+    ...model.qualityAnalysis.map((item) => `- ${item.label}：${item.value}`),
+    "",
+    "## 失败分析",
+    ...(model.failureAnalysis.length ? model.failureAnalysis.map((item) => `- ${item.label}：${item.value}`) : ["- 当前没有失败分类数据"]),
+    "",
+    "## 缺陷跟踪",
+    ...(model.defects.length ? model.defects.map((item) => `- ${item.title} | 状态：${item.status} | 优先级：${item.severity} | 重复：${item.occurrences}`) : ["- 当前没有缺陷记录"]),
+    "",
+    "## 慢接口统计",
+    ...(model.slowRuns.length ? model.slowRuns.map((item) => `- ${item.label} · ${item.durationMs} ms · HTTP ${item.statusCode}`) : ["- 当前没有慢接口数据"]),
+    "",
+    "## 数据库校验结果",
+    ...model.databaseChecks.map((item) => `- ${item.label}：${item.value}`),
+    "",
+    "## 风险提示",
+    ...(model.risks.length ? model.risks.map((item) => `- ${item}`) : ["- 当前没有额外风险提示"]),
+    "",
+    "## 测试结论",
+    `- ${model.conclusion}`,
+    "",
+    "## 附录：执行明细",
+    ...(model.executionDetails.length ? model.executionDetails.map((item) => `- [${item.result}] ${item.name} | ${item.method} ${item.url} | HTTP ${item.statusCode} | ${item.durationMs} ms`) : ["- 当前没有执行明细"]),
   ];
   return lines.filter(Boolean).join("\n");
+}
+
+function createReportHtml() {
+  const model = buildReportModel();
+  const css = `
+    body{font-family:Segoe UI,Arial,sans-serif;margin:0;background:#071019;color:#e9f6ff}
+    .page{max-width:1200px;margin:0 auto;padding:32px 28px 60px}
+    h1,h2,h3{margin:0}
+    h1{font-size:32px;margin-bottom:10px}
+    h2{font-size:20px;margin:28px 0 12px;color:#6ee7ff}
+    h3{font-size:16px;margin-bottom:10px}
+    p,li,td,th{line-height:1.6}
+    .muted{color:#9cb8c7}
+    .hero,.card,.table-wrap{background:#0c1724;border:1px solid #1b3448;border-radius:12px}
+    .hero{padding:24px}
+    .grid{display:grid;gap:14px}
+    .summary-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:18px}
+    .card{padding:16px}
+    .metric{font-size:28px;font-weight:700;margin-top:8px}
+    .section-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px 12px;border-bottom:1px solid #1b3448;text-align:left;vertical-align:top}
+    th{color:#6ee7ff;background:#0f1d2d}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#12283a;border:1px solid #244762;color:#cdeeff;font-size:12px}
+    .risk{color:#ffd166}
+    .fail{color:#ff8fa3}
+    .pass{color:#38d39f}
+    ul{margin:0;padding-left:18px}
+    @media (max-width: 900px){.summary-grid,.section-grid{grid-template-columns:1fr}}
+  `;
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>测试报告</title>
+  <style>${css}</style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>测试报告</h1>
+      <p class="muted">生成时间：${escapeHtml(model.generatedAt)}</p>
+      <div class="grid summary-grid">
+        ${model.summaryCards.map((item) => `<article class="card"><span class="muted">${escapeHtml(item.label)}</span><div class="metric">${escapeHtml(String(item.value))}</div><p class="muted">${escapeHtml(item.hint || "")}</p></article>`).join("")}
+      </div>
+    </section>
+
+    ${renderDefinitionSection("报告概览", model.overview)}
+    ${renderDefinitionSection("测试环境", model.environment)}
+    ${renderDefinitionSection("测试范围", model.scope)}
+    ${renderDefinitionSection("用例执行统计", model.caseExecutionStats)}
+    ${renderDefinitionSection("接口执行统计", model.apiExecutionStats)}
+    ${renderDefinitionSection("覆盖率分析", model.coverageAnalysis)}
+    ${renderDefinitionSection("用例质量分析", model.qualityAnalysis)}
+    ${renderDefinitionSection("失败分析", model.failureAnalysis, "当前没有失败分类数据。")}
+    ${renderTableSection("缺陷跟踪", ["标题", "状态", "优先级", "重复次数", "负责人"], model.defects.map((item) => [item.title, item.status, item.severity, item.occurrences, item.owner || "-"]), "当前没有缺陷记录。")}
+    ${renderTableSection("慢接口统计", ["名称", "方法", "接口", "耗时(ms)", "状态码"], model.slowRuns.map((item) => [item.label, item.method, item.url, item.durationMs, item.statusCode]), "当前没有慢接口数据。")}
+    ${renderDefinitionSection("数据库校验结果", model.databaseChecks)}
+    ${renderListSection("风险提示", model.risks, "当前没有额外风险提示。")}
+    <section><h2>测试结论</h2><div class="card"><p>${escapeHtml(model.conclusion)}</p></div></section>
+    ${renderTableSection("附录：执行明细", ["结果", "名称", "方法", "URL", "状态码", "耗时(ms)", "时间"], model.executionDetails.map((item) => [item.result, item.name, item.method, item.url, item.statusCode, item.durationMs, item.createdAt]), "当前没有执行明细。")}
+    <section><h2>附加说明</h2><div class="card"><p>Markdown 报告下载：平台同时支持导出 Markdown 版本，便于存档、邮件发送和二次编辑。</p></div></section>
+  </div>
+</body>
+</html>`;
+}
+
+function buildReportModel() {
+  const metrics = reportMetrics.value;
+  const overview = [
+    { label: "执行总次数", value: metrics.totalRuns },
+    { label: "用例总数", value: metrics.totalCases },
+    { label: "通过数", value: metrics.passedRuns },
+    { label: "失败数", value: metrics.failedRuns },
+    { label: "跳过数", value: metrics.skippedRuns },
+    { label: "通过率", value: metrics.passRate },
+  ];
+  return {
+    generatedAt: formatDate(new Date().toISOString()),
+    metrics,
+    summaryCards: [
+      { label: "执行总次数", value: metrics.totalRuns, hint: "当前可用于报告的执行记录总数" },
+      { label: "通过率", value: metrics.passRate, hint: "按当前执行记录计算" },
+      { label: "自动化就绪比例", value: metrics.automationReadyRatio, hint: "具备接口执行条件的用例比例" },
+      { label: "质量平均分", value: metrics.averageQuality, hint: "当前用例质量均分" },
+    ],
+    overview,
+    environment: reportEnvironmentItems.value,
+    scope: reportScopeItems.value,
+    caseExecutionStats: [
+      { label: "执行总次数", value: metrics.totalRuns },
+      { label: "用例总数", value: metrics.totalCases },
+      { label: "通过数", value: metrics.passedRuns },
+      { label: "失败数", value: metrics.failedRuns },
+      { label: "跳过数", value: metrics.skippedRuns },
+    ],
+    apiExecutionStats: [
+      { label: "通过率", value: metrics.passRate },
+      { label: "平均响应时间", value: `${metrics.averageDuration} ms` },
+      { label: "最慢接口", value: metrics.slowestInterface },
+      { label: "最近执行记录", value: recentReportRuns.value.length ? recentReportRuns.value.map((item) => item.name || `${item.request?.method || ""} ${item.request?.url || ""}`).slice(0, 3).join("；") : "暂无" },
+    ],
+    coverageAnalysis: [
+      { label: "接口覆盖率", value: metrics.interfaceCoverage, note: `已覆盖 ${coverageReport.value?.coverage?.interface?.covered || 0}/${coverageReport.value?.totalCases || 0}` },
+      { label: "需求覆盖率", value: metrics.requirementCoverage, note: `已覆盖 ${coverageReport.value?.coverage?.requirement?.covered || 0}/${coverageReport.value?.totalCases || 0}` },
+      { label: "异常场景覆盖率", value: metrics.exceptionCoverage, note: `已覆盖 ${coverageReport.value?.coverage?.exception?.covered || 0}/${coverageReport.value?.totalCases || 0}` },
+      ...((coverageReport.value?.uncoveredDetails || []).slice(0, 3).map((item) => ({ label: `未覆盖：${item.label}`, value: item.reason, note: item.suggestion }))),
+    ],
+    qualityAnalysis: [
+      { label: "质量平均分", value: metrics.averageQuality },
+      { label: "自动化就绪比例", value: metrics.automationReadyRatio },
+      ...((coverageReport.value?.qualitySummary?.topIssues || []).map((item) => ({ label: item.issue, value: `${item.count} 次` }))),
+    ],
+    failureAnalysis: reportFailureCategoryItems.value.map((item) => ({ label: item.label, value: `${item.value} 次` })),
+    defects: defectItems.value.map((item) => ({
+      title: item.title,
+      status: defectStatusLabel(item.status),
+      severity: item.severity,
+      occurrences: item.occurrences || 1,
+      owner: item.owner || "",
+    })),
+    slowRuns: reportSlowRunItems.value,
+    databaseChecks: [
+      { label: "总校验数", value: reportDatabaseSummary.value.total },
+      { label: "通过数", value: reportDatabaseSummary.value.passed },
+      { label: "失败数", value: reportDatabaseSummary.value.failed },
+      ...reportDatabaseSummary.value.recentFailures.map((item) => ({ label: item.name, value: item.message || "数据库校验失败" })),
+    ],
+    risks: [...(coverageReport.value?.risks || []), ...(coverageReport.value?.recommendations || []).slice(0, 3)],
+    conclusion: reportConclusionText.value,
+    executionDetails: allRunRecords.value.map((item) => ({
+      result: item.passed ? "PASS" : "FAIL",
+      name: item.name || `${item.request?.method || ""} ${item.request?.url || ""}`,
+      method: item.request?.method || "-",
+      url: item.request?.url || "-",
+      statusCode: item.response?.statusCode ?? "-",
+      durationMs: item.response?.durationMs ?? 0,
+      createdAt: formatDate(item.createdAt),
+    })),
+  };
+}
+
+function metricLabel(key) {
+  const labels = {
+    totalRuns: "执行总次数",
+    totalCases: "用例总数",
+    passedRuns: "通过数",
+    failedRuns: "失败数",
+    skippedRuns: "跳过数",
+    passRate: "通过率",
+    interfaceCoverage: "接口覆盖率",
+    requirementCoverage: "需求覆盖率",
+    exceptionCoverage: "异常场景覆盖率",
+    automationReadyRatio: "自动化就绪比例",
+    averageQuality: "质量平均分",
+    p0Failures: "P0 失败数",
+    p1Failures: "P1 失败数",
+    defectCount: "缺陷总数",
+    unresolvedDefects: "未解决缺陷数",
+    averageDuration: "平均响应时间",
+    slowestInterface: "最慢接口",
+  };
+  return labels[key] || key;
+}
+
+function renderDefinitionSection(title, items, emptyText = "暂无数据。") {
+  return `<section><h2>${escapeHtml(title)}</h2><div class="grid section-grid">${items.length ? items.map((item) => `<article class="card"><h3>${escapeHtml(item.label)}</h3><p>${escapeHtml(String(item.value))}</p>${item.note ? `<p class="muted">${escapeHtml(item.note)}</p>` : ""}</article>`).join("") : `<article class="card"><p>${escapeHtml(emptyText)}</p></article>`}</div></section>`;
+}
+
+function renderTableSection(title, headers, rows, emptyText = "暂无数据。") {
+  if (!rows.length) {
+    return `<section><h2>${escapeHtml(title)}</h2><div class="card"><p>${escapeHtml(emptyText)}</p></div></section>`;
+  }
+  return `<section><h2>${escapeHtml(title)}</h2><div class="table-wrap"><table><thead><tr>${headers.map((item) => `<th>${escapeHtml(item)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(cell ?? "-"))}</td>`).join("")}</tr>`).join("")}</tbody></table></div></section>`;
+}
+
+function renderListSection(title, items, emptyText = "暂无数据。") {
+  if (!items.length) {
+    return `<section><h2>${escapeHtml(title)}</h2><div class="card"><p>${escapeHtml(emptyText)}</p></div></section>`;
+  }
+  return `<section><h2>${escapeHtml(title)}</h2><div class="card"><ul>${items.map((item) => `<li>${escapeHtml(String(item))}</li>`).join("")}</ul></div></section>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function loadDefectRun(item) {
