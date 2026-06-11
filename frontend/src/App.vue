@@ -147,7 +147,7 @@
 
           <div class="field-group">
             <label for="references">外部文档 / 飞书链接</label>
-            <textarea id="references" v-model="references" rows="4" placeholder="粘贴飞书文档、知识库、PRD、接口文档链接；私有文档建议同时导出 Word/PDF/Excel 上传，或把关键内容粘贴到上下文背景中"></textarea>
+            <textarea id="references" v-model="references" rows="4" placeholder="粘贴飞书文档、知识库、PRD、接口文档链接；已配置飞书开放平台授权时，后端会尝试读取私有文档正文"></textarea>
           </div>
 
           <div v-if="referenceInsights.length" class="reference-insights">
@@ -2017,9 +2017,9 @@ function analyzeReferenceLinks(text) {
       return {
         url,
         type: "飞书文档",
-        status: "可能需要登录",
+        status: "可尝试授权读取",
         state: "warn",
-        suggestion: "私有飞书通常无法直接读取正文，建议同时上传导出的 Word/PDF 或粘贴关键内容。",
+        suggestion: "后端配置 FEISHU_APP_ID / FEISHU_APP_SECRET 且应用具备文档权限时，可读取 docx、docs/doc 和 wiki 正文；无授权时仍建议上传导出文件或粘贴关键内容。",
       };
     }
     if (lower.includes("yuque.com")) {

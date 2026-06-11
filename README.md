@@ -36,6 +36,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 支持图片、Excel、CSV、Word、PDF、Markdown、JSON、YAML、文本文件、飞书/网页链接
 - 需求、上下文背景、外部文档链接输入
 - 自动识别链接类型，并提示飞书、Swagger UI、OpenAPI JSON 等不同导入建议
+- 支持在配置飞书开放平台应用后读取私有飞书 docx、docs/doc 和 wiki 文档正文
 - SSE 流式输出生成过程与测试用例
 - 生成过程解析动态展示
 - 测试用例卡片视图、表格视图、搜索过滤
@@ -298,9 +299,22 @@ POST /api/coverage/analyze
 链接：飞书文档、知识库、PRD、接口文档或其他网页链接
 ```
 
-私有飞书文档通常需要登录授权，系统不会直接读取你的飞书账号内容。推荐同时上传导出的 Word/PDF/Excel，或把关键内容粘贴到“上下文背景”中。
+私有飞书文档通常需要登录授权。系统现在支持通过飞书开放平台应用读取私有 docx、docs/doc 和 wiki 正文；如果未配置授权、应用无权限或文档未开放给应用，仍建议同时上传导出的 Word/PDF/Excel，或把关键内容粘贴到“上下文背景”中。
 
 详细说明见：[docs/MATERIAL_INPUTS.md](docs/MATERIAL_INPUTS.md)
+
+## 飞书私有文档读取
+
+如需让系统读取公司内部飞书链接，需要在 `.env` 中配置飞书开放平台内部应用：
+
+```text
+FEISHU_APP_ID=cli_xxx
+FEISHU_APP_SECRET=xxx
+FEISHU_READ_TIMEOUT_SECONDS=20
+FEISHU_MAX_CONTENT_CHARS=12000
+```
+
+使用前请确认应用已经开通文档 / Wiki 读取权限，并且目标文档在该应用可访问范围内。生成时后端会把读取到的飞书正文并入“抽取文本材料”；如果没有配置或没有权限，页面会在解析动态里提示失败原因，生成流程不会中断。
 
 ## 构建前端
 

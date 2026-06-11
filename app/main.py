@@ -28,6 +28,7 @@ from app.services.database import (
 )
 from app.services.excel_exporter import save_cases_to_excel
 from app.services.failure_agent import analyze_failure
+from app.services.feishu_reader import build_feishu_context, fetch_feishu_references
 from app.services.generator import GenerationEvent, generate_test_cases
 from app.services.material_parser import build_material_context, read_upload_materials
 from app.services.openapi_importer import generate_cases_from_openapi
@@ -293,10 +294,24 @@ async def _stream_generation(
     materials: list[UploadedMaterial],
 ) -> AsyncIterator[str]:
     cases = []
-    material_context = build_material_context(materials, references)
     yield _sse("status", {"text": f"已接收 {len(materials)} 个材料，正在解析多源信息与业务约束。"})
     for material in materials:
         yield _sse("thought", {"text": f"材料：{material.describe()}"})
+
+    feishu_results = []
+    if references.strip():
+        yield _sse("thought", {"text": "正在检查外部链接，并尝试读取已配置授权的飞书文档。"})
+        try:
+            feishu_results = await fetch_feishu_references(references)
+            for result in feishu_results:
+                yield _sse("thought", {"text": result.to_status_text()})
+        except Exception as exc:
+            yield _sse("thought", {"text": f"飞书链接读取已跳过：{type(exc).__name__}"})
+
+    material_context = build_material_context(materials, references)
+    feishu_context = build_feishu_context(feishu_results)
+    if feishu_context:
+        material_context = "\n\n".join(part for part in [material_context, feishu_context] if part).strip()
 
     try:
         async for event in generate_test_cases(requirements, context, references, materials, material_context):
