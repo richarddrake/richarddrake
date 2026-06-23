@@ -27,6 +27,7 @@ scripts/                   Windows 启动和端口释放脚本
 - MySQL 配置说明：[`docs/MYSQL_SETUP.md`](docs/MYSQL_SETUP.md)
 - 接口测试执行说明：[`docs/API_TEST_EXECUTION.md`](docs/API_TEST_EXECUTION.md)
 - Playwright UI 自动化说明：[`docs/UI_AUTOMATION_PLAYWRIGHT.md`](docs/UI_AUTOMATION_PLAYWRIGHT.md)
+- 测试验证案例与量化结果：[`docs/TESTING_EVIDENCE.md`](docs/TESTING_EVIDENCE.md)
 
 > 维护约定：每次系统版本更新、功能迭代或能力下线后，必须同步更新 `docs/PRODUCT_REPORT.md`。
 
@@ -83,6 +84,22 @@ scripts/                   Windows 启动和端口释放脚本
 14. 附录：执行明细
 - 支持 OpenAI-compatible 多模态接口
 - 未配置模型 Key 时提供本地演示生成器，便于验证完整流程
+
+## 实测验证结果
+
+项目已补充一组可复现的平台自测记录，验证对象包括平台后端接口、MySQL 状态接口、生成历史接口、接口执行历史接口和 `docs/demo/openapi.json` 演示 Swagger 契约。
+
+最近一次本地验证结果：
+
+- Swagger 导入识别 3 个接口操作，生成 8 条测试用例。
+- 8 条生成用例全部具备自动化执行配置，自动化就绪比例 100%。
+- 用例质量平均分 97.6，接口覆盖率 100%，字段覆盖率 87.5%。
+- 接口执行器自测 4 个接口用例，31 个断言全部通过，通过率 100%。
+- 数据库只读校验 1 项，通过 1 项。
+- 轻量并发验证 5 次请求全部通过，平均耗时 111.8 ms，P95 耗时 145 ms。
+- Excel 导出生成 `generated/test_cases_evidence_20260623.xlsx`，包含 8 条用例。
+
+详细记录见：[`docs/TESTING_EVIDENCE.md`](docs/TESTING_EVIDENCE.md)
 
 ## 后端启动
 
