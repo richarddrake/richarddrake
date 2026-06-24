@@ -25,7 +25,7 @@ MAX_TIMEOUT_SECONDS = 30.0
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_RESPONSE_PREVIEW_CHARS = 12000
-MAX_SUITE_STEPS = 30
+MAX_SUITE_STEPS = 500
 MAX_LOAD_REPEAT = 100
 MAX_LOAD_CONCURRENCY = 20
 MAX_REDIRECTS = 3
@@ -299,9 +299,9 @@ def _prepare_request(payload: dict[str, Any], variables: dict[str, Any]) -> dict
     expected_contains = _render_text(payload.get("expected_contains") or payload.get("expectedContains") or "", variables).strip()
     timeout_seconds = _normalize_timeout(payload.get("timeout_seconds") or payload.get("timeoutSeconds"))
     max_response_ms = _optional_float(payload.get("max_response_ms") or payload.get("maxResponseMs"))
-    assertions = _as_list(payload.get("assertions"))
-    extractors = _as_list(payload.get("extractors"))
-    schema = payload.get("json_schema") or payload.get("jsonSchema") or payload.get("schema")
+    assertions = _as_list(_render_value(payload.get("assertions") or [], variables))
+    extractors = _as_list(_render_value(payload.get("extractors") or [], variables))
+    schema = _render_value(payload.get("json_schema") or payload.get("jsonSchema") or payload.get("schema"), variables)
     database_assertions = _as_list(payload.get("database_assertions") or payload.get("databaseAssertions"))
     return {
         "name": name,

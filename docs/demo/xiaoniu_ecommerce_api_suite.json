@@ -1,0 +1,503 @@
+{
+  "name": "Xiaoniu ecommerce API regression suite",
+  "variables": {
+    "base_url": "http://43.133.227.52/api"
+  },
+  "stopOnFailure": false,
+  "steps": [
+    {
+      "name": "Admin login",
+      "method": "POST",
+      "url": "{{base_url}}/login",
+      "bodyMode": "json",
+      "body": "{\"username\":\"admin\",\"password\":\"admin123\"}",
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "admin login code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "admin token exists", "source": "json", "path": "$.token", "operator": "exists" },
+        { "name": "admin role", "source": "json", "path": "$.user.role", "operator": "equals", "expected": "admin" }
+      ],
+      "extractors": [
+        { "name": "adminToken", "source": "json", "path": "$.token" }
+      ]
+    },
+    {
+      "name": "Admin reset before test",
+      "method": "POST",
+      "url": "{{base_url}}/reset",
+      "headers": { "Authorization": "Bearer {{adminToken}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "reset success", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 }
+      ]
+    },
+    {
+      "name": "Health check",
+      "method": "GET",
+      "url": "{{base_url}}/health",
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "health code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "service exists", "source": "json", "path": "$.service", "operator": "exists" }
+      ]
+    },
+    {
+      "name": "Tester login",
+      "method": "POST",
+      "url": "{{base_url}}/login",
+      "bodyMode": "json",
+      "body": "{\"username\":\"tester\",\"password\":\"123456\"}",
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "tester login code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "tester token exists", "source": "json", "path": "$.token", "operator": "exists" },
+        { "name": "tester role", "source": "json", "path": "$.user.role", "operator": "equals", "expected": "qa" }
+      ],
+      "extractors": [
+        { "name": "token", "source": "json", "path": "$.token" }
+      ]
+    },
+    {
+      "name": "Bad password login rejected",
+      "method": "POST",
+      "url": "{{base_url}}/login",
+      "bodyMode": "json",
+      "body": "{\"username\":\"tester\",\"password\":\"wrong\"}",
+      "expectedStatus": 401,
+      "assertions": [
+        { "name": "bad password code", "source": "json", "path": "$.code", "operator": "equals", "expected": 401 }
+      ]
+    },
+    {
+      "name": "Empty login rejected",
+      "method": "POST",
+      "url": "{{base_url}}/login",
+      "bodyMode": "json",
+      "body": "{\"username\":\"\",\"password\":\"\"}",
+      "expectedStatus": 401,
+      "assertions": [
+        { "name": "empty login code", "source": "json", "path": "$.code", "operator": "equals", "expected": 401 }
+      ]
+    },
+    {
+      "name": "Products require token",
+      "method": "GET",
+      "url": "{{base_url}}/products",
+      "expectedStatus": 401,
+      "assertions": [
+        { "name": "unauthorized code", "source": "json", "path": "$.code", "operator": "equals", "expected": 401 }
+      ]
+    },
+    {
+      "name": "Products reject bad token",
+      "method": "GET",
+      "url": "{{base_url}}/products",
+      "headers": { "Authorization": "Bearer bad-token" },
+      "expectedStatus": 401,
+      "assertions": [
+        { "name": "bad token code", "source": "json", "path": "$.code", "operator": "equals", "expected": 401 }
+      ]
+    },
+    {
+      "name": "Products list success",
+      "method": "GET",
+      "url": "{{base_url}}/products",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "products code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "products length", "source": "json", "path": "$.products", "operator": "length", "expected": 4 },
+        { "name": "first product id exists", "source": "json", "path": "$.products[0].id", "operator": "exists" }
+      ]
+    },
+    {
+      "name": "Initial cart empty",
+      "method": "GET",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "cart code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "cart items empty", "source": "json", "path": "$.items", "operator": "length", "expected": 0 },
+        { "name": "cart total zero", "source": "json", "path": "$.totalAmount", "operator": "equals", "expected": 0 }
+      ]
+    },
+    {
+      "name": "Invalid product rejected",
+      "method": "POST",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{\"productId\":999,\"quantity\":1}",
+      "expectedStatus": 404,
+      "assertions": [
+        { "name": "invalid product code", "source": "json", "path": "$.code", "operator": "equals", "expected": 404 }
+      ]
+    },
+    {
+      "name": "Zero quantity should be rejected",
+      "method": "POST",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{\"productId\":103,\"quantity\":0}",
+      "expectedStatus": 400,
+      "assertions": [
+        { "name": "zero quantity code", "source": "json", "path": "$.code", "operator": "equals", "expected": 400 }
+      ]
+    },
+    {
+      "name": "Cleanup product 103 after zero quantity check",
+      "method": "DELETE",
+      "url": "{{base_url}}/cart/103",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": null
+    },
+    {
+      "name": "Negative quantity rejected",
+      "method": "POST",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{\"productId\":103,\"quantity\":-1}",
+      "expectedStatus": 400,
+      "assertions": [
+        { "name": "negative quantity code", "source": "json", "path": "$.code", "operator": "equals", "expected": 400 }
+      ]
+    },
+    {
+      "name": "Out of stock product should be rejected",
+      "method": "POST",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{\"productId\":101,\"quantity\":1}",
+      "expectedStatus": 400,
+      "assertions": [
+        { "name": "out of stock code", "source": "json", "path": "$.code", "operator": "equals", "expected": 400 }
+      ]
+    },
+    {
+      "name": "Cleanup product 101 after stock check",
+      "method": "DELETE",
+      "url": "{{base_url}}/cart/101",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": null
+    },
+    {
+      "name": "Add valid product to cart",
+      "method": "POST",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{\"productId\":103,\"quantity\":1}",
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "add cart code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "cart item quantity", "source": "json", "path": "$.items[0].quantity", "operator": "equals", "expected": 1 }
+      ]
+    },
+    {
+      "name": "Cart total after add",
+      "method": "GET",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "cart item length", "source": "json", "path": "$.items", "operator": "length", "expected": 1 },
+        { "name": "cart total amount", "source": "json", "path": "$.totalAmount", "operator": "equals", "expected": 99 }
+      ]
+    },
+    {
+      "name": "Create order",
+      "method": "POST",
+      "url": "{{base_url}}/orders",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{}",
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "create order code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "order pending", "source": "json", "path": "$.order.status", "operator": "equals", "expected": "pending" },
+        { "name": "order amount", "source": "json", "path": "$.order.totalAmount", "operator": "equals", "expected": 99 }
+      ],
+      "extractors": [
+        { "name": "paidOrderId", "source": "json", "path": "$.order.id" }
+      ]
+    },
+    {
+      "name": "Cart cleared after order",
+      "method": "GET",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "cart cleared", "source": "json", "path": "$.items", "operator": "length", "expected": 0 },
+        { "name": "cart total zero after order", "source": "json", "path": "$.totalAmount", "operator": "equals", "expected": 0 }
+      ]
+    },
+    {
+      "name": "Order detail success",
+      "method": "GET",
+      "url": "{{base_url}}/orders/{{paidOrderId}}",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "detail order id", "source": "json", "path": "$.order.id", "operator": "equals", "expected": "{{paidOrderId}}" }
+      ]
+    },
+    {
+      "name": "Pay pending order",
+      "method": "POST",
+      "url": "{{base_url}}/orders/{{paidOrderId}}/pay",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "pay code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "paid status", "source": "json", "path": "$.order.status", "operator": "equals", "expected": "paid" }
+      ]
+    },
+    {
+      "name": "Duplicate pay rejected",
+      "method": "POST",
+      "url": "{{base_url}}/orders/{{paidOrderId}}/pay",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 400,
+      "assertions": [
+        { "name": "duplicate pay code", "source": "json", "path": "$.code", "operator": "equals", "expected": 400 }
+      ]
+    },
+    {
+      "name": "Cancel paid order rejected",
+      "method": "POST",
+      "url": "{{base_url}}/orders/{{paidOrderId}}/cancel",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 409,
+      "assertions": [
+        { "name": "cancel paid code", "source": "json", "path": "$.code", "operator": "equals", "expected": 409 }
+      ]
+    },
+    {
+      "name": "Add product for cancel flow",
+      "method": "POST",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{\"productId\":102,\"quantity\":1}",
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "add cancel product code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 }
+      ]
+    },
+    {
+      "name": "Create order for cancel flow",
+      "method": "POST",
+      "url": "{{base_url}}/orders",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{}",
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "cancel order pending", "source": "json", "path": "$.order.status", "operator": "equals", "expected": "pending" }
+      ],
+      "extractors": [
+        { "name": "cancelOrderId", "source": "json", "path": "$.order.id" }
+      ]
+    },
+    {
+      "name": "Cancel pending order",
+      "method": "POST",
+      "url": "{{base_url}}/orders/{{cancelOrderId}}/cancel",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "cancel code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "cancelled status", "source": "json", "path": "$.order.status", "operator": "equals", "expected": "cancelled" }
+      ]
+    },
+    {
+      "name": "Pay canceled order rejected",
+      "method": "POST",
+      "url": "{{base_url}}/orders/{{cancelOrderId}}/pay",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 409,
+      "assertions": [
+        { "name": "pay canceled code", "source": "json", "path": "$.code", "operator": "equals", "expected": 409 }
+      ]
+    },
+    {
+      "name": "Cart requires token",
+      "method": "GET",
+      "url": "{{base_url}}/cart",
+      "expectedStatus": 401,
+      "assertions": [
+        { "name": "cart unauthorized code", "source": "json", "path": "$.code", "operator": "equals", "expected": 401 }
+      ]
+    },
+    {
+      "name": "Cart rejects bad token",
+      "method": "GET",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer bad-token" },
+      "expectedStatus": 401,
+      "assertions": [
+        { "name": "cart bad token code", "source": "json", "path": "$.code", "operator": "equals", "expected": 401 }
+      ]
+    },
+    {
+      "name": "Orders require token",
+      "method": "GET",
+      "url": "{{base_url}}/orders",
+      "expectedStatus": 401,
+      "assertions": [
+        { "name": "orders unauthorized code", "source": "json", "path": "$.code", "operator": "equals", "expected": 401 }
+      ]
+    },
+    {
+      "name": "Orders reject bad token",
+      "method": "GET",
+      "url": "{{base_url}}/orders",
+      "headers": { "Authorization": "Bearer bad-token" },
+      "expectedStatus": 401,
+      "assertions": [
+        { "name": "orders bad token code", "source": "json", "path": "$.code", "operator": "equals", "expected": 401 }
+      ]
+    },
+    {
+      "name": "Order detail not found",
+      "method": "GET",
+      "url": "{{base_url}}/orders/NO_NOT_EXISTS",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 404,
+      "assertions": [
+        { "name": "order detail not found code", "source": "json", "path": "$.code", "operator": "equals", "expected": 404 }
+      ]
+    },
+    {
+      "name": "Pay not found order rejected",
+      "method": "POST",
+      "url": "{{base_url}}/orders/NO_NOT_EXISTS/pay",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 404,
+      "assertions": [
+        { "name": "pay not found code", "source": "json", "path": "$.code", "operator": "equals", "expected": 404 }
+      ]
+    },
+    {
+      "name": "Cancel not found order rejected",
+      "method": "POST",
+      "url": "{{base_url}}/orders/NO_NOT_EXISTS/cancel",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 404,
+      "assertions": [
+        { "name": "cancel not found code", "source": "json", "path": "$.code", "operator": "equals", "expected": 404 }
+      ]
+    },
+    {
+      "name": "Empty cart order rejected",
+      "method": "POST",
+      "url": "{{base_url}}/orders",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{}",
+      "expectedStatus": 400,
+      "assertions": [
+        { "name": "empty cart order code", "source": "json", "path": "$.code", "operator": "equals", "expected": 400 }
+      ]
+    },
+    {
+      "name": "Quantity greater than stock should be rejected",
+      "method": "POST",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{\"productId\":102,\"quantity\":99}",
+      "expectedStatus": 400,
+      "assertions": [
+        { "name": "over stock code", "source": "json", "path": "$.code", "operator": "equals", "expected": 400 }
+      ]
+    },
+    {
+      "name": "Cleanup product 102 after over stock check",
+      "method": "DELETE",
+      "url": "{{base_url}}/cart/102",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": null
+    },
+    {
+      "name": "Add product 102 quantity two",
+      "method": "POST",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "bodyMode": "json",
+      "body": "{\"productId\":102,\"quantity\":2}",
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "add product 102 code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 },
+        { "name": "product 102 quantity", "source": "json", "path": "$.items[0].quantity", "operator": "equals", "expected": 2 }
+      ]
+    },
+    {
+      "name": "Cart total for product 102",
+      "method": "GET",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "cart product 102 total", "source": "json", "path": "$.totalAmount", "operator": "equals", "expected": 998 },
+        { "name": "cart has one item", "source": "json", "path": "$.items", "operator": "length", "expected": 1 }
+      ]
+    },
+    {
+      "name": "Delete existing cart product",
+      "method": "DELETE",
+      "url": "{{base_url}}/cart/102",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "delete cart code", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 }
+      ]
+    },
+    {
+      "name": "Cart empty after delete",
+      "method": "GET",
+      "url": "{{base_url}}/cart",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "cart empty after delete", "source": "json", "path": "$.items", "operator": "length", "expected": 0 },
+        { "name": "cart total zero after delete", "source": "json", "path": "$.totalAmount", "operator": "equals", "expected": 0 }
+      ]
+    },
+    {
+      "name": "Delete nonexistent cart product",
+      "method": "DELETE",
+      "url": "{{base_url}}/cart/999",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 404,
+      "assertions": [
+        { "name": "delete nonexistent code", "source": "json", "path": "$.code", "operator": "equals", "expected": 404 }
+      ]
+    },
+    {
+      "name": "Normal user reset forbidden",
+      "method": "POST",
+      "url": "{{base_url}}/reset",
+      "headers": { "Authorization": "Bearer {{token}}" },
+      "expectedStatus": 403,
+      "assertions": [
+        { "name": "normal reset forbidden code", "source": "json", "path": "$.code", "operator": "equals", "expected": 403 }
+      ]
+    },
+    {
+      "name": "Admin reset after test",
+      "method": "POST",
+      "url": "{{base_url}}/reset",
+      "headers": { "Authorization": "Bearer {{adminToken}}" },
+      "expectedStatus": 200,
+      "assertions": [
+        { "name": "final reset success", "source": "json", "path": "$.code", "operator": "equals", "expected": 0 }
+      ]
+    }
+  ]
+}

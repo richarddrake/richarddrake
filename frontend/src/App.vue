@@ -1965,7 +1965,7 @@ async function runApiSuite() {
         name: `${apiTest.value.name || "接口"}用例集`,
         variables,
         steps,
-        stopOnFailure: true,
+        stopOnFailure: false,
       }),
     });
     if (!response.ok) {
