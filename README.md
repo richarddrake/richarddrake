@@ -21,6 +21,7 @@ scripts/                   Windows 启动和端口释放脚本
 ## 文档入口
 
 - 项目协作规则：[`AGENTS.md`](AGENTS.md)
+- 项目描述与量化测试成果：[`docs/PROJECT_DESCRIPTION.md`](docs/PROJECT_DESCRIPTION.md)
 - 产品汇报版文档：[`docs/PRODUCT_REPORT.md`](docs/PRODUCT_REPORT.md)
 - 多源材料输入说明：[`docs/MATERIAL_INPUTS.md`](docs/MATERIAL_INPUTS.md)
 - 模型接入配置说明：[`docs/MODEL_SETUP.md`](docs/MODEL_SETUP.md)
@@ -89,6 +90,8 @@ scripts/                   Windows 启动和端口释放脚本
 ## 实测验证结果
 
 项目已补充一组可复现的平台自测记录，验证对象包括平台后端接口、MySQL 状态接口、生成历史接口、接口执行历史接口和 `docs/demo/openapi.json` 演示 Swagger 契约。
+
+面向简历、项目答辩和阶段汇报的完整项目描述见：[`docs/PROJECT_DESCRIPTION.md`](docs/PROJECT_DESCRIPTION.md)
 
 最近一次本地验证结果：
 
