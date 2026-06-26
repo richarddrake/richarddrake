@@ -1,13 +1,18 @@
-# 这个脚本负责启动 Docker Compose 演示环境，并在存在 .env.docker 时自动加载它。
-param(
+﻿param(
     [switch]$Detached,
     [switch]$NoBuild,
     [string]$EnvFile = ".env.docker"
 )
 
+# Start Docker Compose demo environment and load .env.docker when it exists.
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $EnvFilePath = Join-Path $ProjectRoot $EnvFile
+
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Host "Docker CLI was not found. Please install and start Docker Desktop, then reopen the terminal and retry." -ForegroundColor Red
+    exit 1
+}
 
 $composeArgs = @("compose")
 if (Test-Path $EnvFilePath) {

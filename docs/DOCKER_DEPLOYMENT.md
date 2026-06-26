@@ -153,6 +153,8 @@ DOCKER_MYSQL_PORT=3308
 .\scripts\docker-start.cmd
 ```
 
+如果执行脚本时提示 `Docker CLI was not found` 或 `docker 不是内部或外部命令`，说明当前终端找不到 Docker 命令。通常需要先安装并启动 Docker Desktop，然后关闭当前终端，重新打开 PowerShell 或 CMD 再执行启动命令。
+
 ## 9. 与本地启动流程的关系
 
 Docker 启动流程是新增的部署方式，不替代原有本地开发流程。
