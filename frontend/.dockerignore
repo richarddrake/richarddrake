@@ -1,0 +1,8 @@
+# 这个文件负责减少前端 Docker 构建上下文，避免把本地依赖和构建产物打进镜像。
+node_modules
+dist
+.vite
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env

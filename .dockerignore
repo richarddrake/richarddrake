@@ -1,5 +1,7 @@
 # 这个文件负责定义 Docker 构建时要排除的本地缓存、依赖和生成产物。
 .git
+.env
+.env.docker
 .venv
 venv
 __pycache__

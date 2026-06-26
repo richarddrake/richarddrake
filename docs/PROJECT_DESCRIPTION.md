@@ -1,6 +1,6 @@
 # AI 辅助测试用例生成与接口自动化测试平台项目描述
 
-> 最近更新：2026-06-24  
+> 最近更新：2026-06-26
 > 文档用途：用于简历项目经历、项目答辩、阶段汇报和 GitHub 项目说明。  
 > 说明：本说明已补充平台自测和小牛电商外部业务系统接口测试的量化结果。
 
@@ -14,7 +14,7 @@ AI 辅助测试用例生成与接口自动化测试平台
 
 ## 技术栈
 
-Python、FastAPI、Vue 3、Vite、MySQL、Swagger / OpenAPI、JSONPath、Playwright、LLM、Prompt Engineering、Excel 导出
+Python、FastAPI、Vue 3、Vite、MySQL、Docker、Docker Compose、Nginx、Swagger / OpenAPI、JSONPath、Playwright、LLM、Prompt Engineering、Excel 导出
 
 ## 项目链接
 
@@ -38,7 +38,9 @@ Python、FastAPI、Vue 3、Vite、MySQL、Swagger / OpenAPI、JSONPath、Playwri
 
 5. 建设测试报告和缺陷跟踪能力，支持报告中心汇总执行次数、通过率、失败数、断言统计、慢接口、覆盖率、质量评分、数据库校验、风险提示和执行明细，并支持导出 Markdown / HTML 报告；失败项可进入缺陷跟踪模块进行状态、优先级、负责人和复现证据管理。
 
-6. 使用平台对自身接口和外部小牛电商订单测试实战项目进行验证，沉淀可复现的需求分析、接口测试用例、可执行用例集和测试结果，避免项目只停留在“平台搭建”层面。
+6. 对平台进行 Docker 化改造，编写前后端镜像构建配置和 Docker Compose 编排文件，将 Vue 前端、FastAPI 后端和 MySQL 数据库整合为一键启动的演示环境，降低本地部署和测试环境搭建成本。
+
+7. 使用平台对自身接口和外部小牛电商订单测试实战项目进行验证，沉淀可复现的需求分析、接口测试用例、可执行用例集和测试结果，避免项目只停留在“平台搭建”层面。
 
 ## 已完成测试验证
 
@@ -98,11 +100,13 @@ Python、FastAPI、Vue 3、Vite、MySQL、Swagger / OpenAPI、JSONPath、Playwri
 - 接口自动化执行器和 500 步用例集执行能力
 - JSONPath、JSON Schema、响应时间、Header、正则和数据库校验能力
 - 报告中心、HTML / Markdown 测试报告和缺陷跟踪模块
+- Docker Compose 一键演示环境，包含 Vue 前端、FastAPI 后端和 MySQL 数据库
 - 平台自测验证记录与小牛电商外部业务系统接口测试记录
 
 ## 可复盘测试材料
 
 - `docs/TESTING_EVIDENCE.md`：测试验证案例与量化结果
+- `docs/DOCKER_DEPLOYMENT.md`：Docker Compose 部署说明
 - `docs/demo/xiaoniu_ecommerce_prd.md`：小牛电商需求分析和测试范围
 - `docs/demo/xiaoniu_ecommerce_test_cases.md`：45 条接口测试用例
 - `docs/demo/xiaoniu_ecommerce_api_suite.json`：可执行接口用例集

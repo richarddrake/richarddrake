@@ -9,6 +9,7 @@ frontend/                  Vue 3 + Vite 前端，默认运行在 127.0.0.1:5173
 app/                       FastAPI 后端 API，默认运行在 127.0.0.1:8000
 generated/                 运行时生成的 Excel 文件
 docs/                      配置与输入材料说明
+docker/                    Docker Compose 演示环境初始化配置
 scripts/                   Windows 启动和端口释放脚本
 ```
 
@@ -26,6 +27,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 多源材料输入说明：[`docs/MATERIAL_INPUTS.md`](docs/MATERIAL_INPUTS.md)
 - 模型接入配置说明：[`docs/MODEL_SETUP.md`](docs/MODEL_SETUP.md)
 - MySQL 配置说明：[`docs/MYSQL_SETUP.md`](docs/MYSQL_SETUP.md)
+- Docker Compose 部署说明：[`docs/DOCKER_DEPLOYMENT.md`](docs/DOCKER_DEPLOYMENT.md)
 - 接口测试执行说明：[`docs/API_TEST_EXECUTION.md`](docs/API_TEST_EXECUTION.md)
 - Playwright UI 自动化说明：[`docs/UI_AUTOMATION_PLAYWRIGHT.md`](docs/UI_AUTOMATION_PLAYWRIGHT.md)
 - 测试验证案例与量化结果：[`docs/TESTING_EVIDENCE.md`](docs/TESTING_EVIDENCE.md)
@@ -65,6 +67,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 支持失败分析证据链、置信度、是否建议创建缺陷和是否建议更新用例
 - 支持请求/响应敏感 Header 脱敏，并支持按环境变量启用更严格的内网访问限制
 - 支持 Playwright Web UI 自动化基础执行：受控步骤 DSL、Chromium/Firefox/WebKit、页面断言、失败截图、trace 证据、UI 执行历史和报告中心汇总
+- 支持 Docker Compose 一键启动 Vue 前端、FastAPI 后端和 MySQL，便于演示和搭建可复现测试环境
 
 ## 测试报告能力
 
@@ -222,6 +225,12 @@ http://127.0.0.1:5173
 本地开发仍推荐使用上面的固定启动流程。若你已经安装 Docker Desktop，也可以用 Compose 一键启动前端、后端和 MySQL：
 
 ```powershell
+.\scripts\docker-start.cmd
+```
+
+也可以直接使用 Compose：
+
+```powershell
 docker compose up --build
 ```
 
@@ -230,6 +239,14 @@ docker compose up --build
 ```text
 前端：http://127.0.0.1:5173
 后端：http://127.0.0.1:8000
+后端文档：http://127.0.0.1:8000/docs
+MySQL：127.0.0.1:3307
+```
+
+停止环境：
+
+```powershell
+.\scripts\docker-stop.cmd
 ```
 
 演示材料：
@@ -240,6 +257,8 @@ docs/demo/prd.md
 ```
 
 在前端“OpenAPI / Swagger 导入”面板粘贴 `docs/demo/openapi.json` 内容，可以生成可执行接口用例和覆盖率报告。
+
+详细说明见：[docs/DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md)
 
 ## 模型配置
 

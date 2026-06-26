@@ -8,6 +8,7 @@ generated/*.log
 generated/logs/
 generated/ui-runs/
 .env
+.env.docker
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/

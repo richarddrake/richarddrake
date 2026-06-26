@@ -1,24 +1,30 @@
-# 这个 Compose 文件负责一键拉起前端、后端和 MySQL 的本地演示环境。
+# 这个 Compose 文件负责一键拉起 Vue 前端、FastAPI 后端和 MySQL 的可复现演示环境。
+name: ai-testcase-platform
+
 services:
   mysql:
     image: mysql:8.0
     container_name: ai-test-mysql
-    command: --default-authentication-plugin=mysql_native_password
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     environment:
-      MYSQL_ROOT_PASSWORD: ai_test_root
-      MYSQL_DATABASE: ai_testcase
-      MYSQL_USER: ai_test_user
-      MYSQL_PASSWORD: ai_test_password
+      MYSQL_ROOT_PASSWORD: ${DOCKER_MYSQL_ROOT_PASSWORD:-ai_test_root}
+      MYSQL_DATABASE: ${DOCKER_MYSQL_DATABASE:-ai_testcase}
+      MYSQL_USER: ${DOCKER_MYSQL_USER:-ai_test_user}
+      MYSQL_PASSWORD: ${DOCKER_MYSQL_PASSWORD:-ai_test_password}
     ports:
-      - "3306:3306"
+      - "${DOCKER_MYSQL_PORT:-3307}:3306"
     volumes:
       - ai-test-mysql-data:/var/lib/mysql
       - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uai_test_user", "-pai_test_password"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
       interval: 10s
       timeout: 5s
       retries: 12
+      start_period: 30s
 
   backend:
     build:
@@ -29,15 +35,18 @@ services:
       DATABASE_ENABLED: "true"
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
-      MYSQL_USER: ai_test_user
-      MYSQL_PASSWORD: ai_test_password
-      MYSQL_DATABASE: ai_testcase
+      MYSQL_USER: ${DOCKER_MYSQL_USER:-ai_test_user}
+      MYSQL_PASSWORD: ${DOCKER_MYSQL_PASSWORD:-ai_test_password}
+      MYSQL_DATABASE: ${DOCKER_MYSQL_DATABASE:-ai_testcase}
       MYSQL_CHARSET: utf8mb4
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-5000}
+      API_RUNNER_ALLOW_LOCALHOST: "true"
     ports:
-      - "8000:8000"
+      - "${DOCKER_BACKEND_PORT:-8000}:8000"
     depends_on:
       mysql:
         condition: service_healthy
@@ -47,12 +56,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: http://127.0.0.1:8000
+        VITE_API_BASE_URL: ""
     container_name: ai-test-frontend
     ports:
-      - "5173:80"
+      - "${DOCKER_FRONTEND_PORT:-5173}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   ai-test-mysql-data:
