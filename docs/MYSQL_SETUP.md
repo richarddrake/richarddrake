@@ -1,6 +1,6 @@
 # MySQL 数据库配置说明
 
-本项目现在支持把生成历史保存到 MySQL。数据库用于持久化保存生成会话、输入摘要、材料摘要、测试用例明细和 Excel 下载地址。
+本项目现在支持把生成历史和登录系统数据保存到 MySQL。数据库用于持久化保存生成会话、输入摘要、材料摘要、测试用例明细、Excel 下载地址、用户账号和登录审计记录。
 
 ## 1. 安装依赖
 
@@ -72,7 +72,13 @@ DATABASE_URL=mysql+pymysql://ai_test_user:your-mysql-password@127.0.0.1:3306/ai_
 generation_sessions
 generation_materials
 test_cases
+api_test_runs
+ui_test_runs
+users
+login_audit_logs
 ```
+
+如果 `DATABASE_ENABLED=false`，生成历史不会写入 MySQL，但登录系统仍会使用本地 `generated/auth.db` 保存默认管理员和后续创建的用户，方便在没有 MySQL 的本地环境中演示。
 
 ## 5. 检查连接状态
 
@@ -81,6 +87,8 @@ test_cases
 ```text
 http://127.0.0.1:8000/api/database/status
 ```
+
+该接口现在需要登录后访问。建议先打开前端 `http://127.0.0.1:5173`，使用管理员账号登录，再从页面历史记录区域查看数据库状态。
 
 返回示例：
 

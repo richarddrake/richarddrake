@@ -11,7 +11,7 @@ from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine, text
 from sqlalchemy.dialects.mysql import LONGTEXT
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 from app.schemas import TestCase, UploadedMaterial
@@ -19,12 +19,16 @@ from app.schemas import TestCase, UploadedMaterial
 
 load_dotenv()
 
+BASE_DIR = Path(__file__).resolve().parents[2]
 Base = declarative_base()
 JsonText = Text().with_variant(LONGTEXT, "mysql")
 
 _engine = None
 _SessionLocal = None
+_auth_engine = None
+_AuthSessionLocal = None
 _last_error = ""
+_auth_last_error = ""
 
 
 class GenerationSession(Base):
@@ -126,6 +130,33 @@ class UiTestRun(Base):
     failure_analysis_json = Column(JsonText, nullable=False, default="{}")
 
 
+class UserAccount(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(80), unique=True, index=True, nullable=False)
+    password_hash = Column(String(500), nullable=False)
+    display_name = Column(String(120), nullable=False, default="")
+    role = Column(String(32), nullable=False, default="tester")
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
+
+
+class LoginAuditLog(Base):
+    __tablename__ = "login_audit_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    username = Column(String(80), nullable=False, default="")
+    success = Column(Integer, nullable=False, default=0)
+    ip_address = Column(String(80), nullable=False, default="")
+    user_agent = Column(String(500), nullable=False, default="")
+    reason = Column(String(255), nullable=False, default="")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 def init_database() -> bool:
     global _engine, _SessionLocal, _last_error
     if not is_database_enabled():
@@ -153,6 +184,222 @@ def init_database() -> bool:
     except SQLAlchemyError as exc:
         _last_error = str(exc)
         return False
+
+
+def init_auth_store() -> bool:
+    global _auth_engine, _AuthSessionLocal, _auth_last_error
+    if is_database_enabled():
+        ok = init_database()
+        _auth_last_error = _last_error
+        return ok
+
+    if _auth_engine is None:
+        sqlite_path = Path(os.getenv("AUTH_SQLITE_PATH", str(BASE_DIR / "generated" / "auth.db")))
+        sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+        _auth_engine = create_engine(
+            f"sqlite:///{sqlite_path.as_posix()}",
+            connect_args={"check_same_thread": False},
+            future=True,
+        )
+        _AuthSessionLocal = sessionmaker(bind=_auth_engine, autoflush=False, autocommit=False, future=True)
+
+    try:
+        Base.metadata.create_all(bind=_auth_engine)
+        _auth_last_error = ""
+        return True
+    except SQLAlchemyError as exc:
+        _auth_last_error = str(exc)
+        return False
+
+
+def get_auth_store_status() -> dict[str, Any]:
+    if not init_auth_store():
+        return {
+            "enabled": True,
+            "connected": False,
+            "message": _auth_last_error or "认证存储初始化失败。",
+        }
+    return {
+        "enabled": True,
+        "connected": True,
+        "message": "MySQL 认证存储可用。" if is_database_enabled() else "本地认证存储可用。",
+    }
+
+
+def create_user_account(
+    *,
+    username: str,
+    password_hash: str,
+    display_name: str = "",
+    role: str = "tester",
+    is_active: bool = True,
+) -> dict[str, Any] | None:
+    session_factory = _get_auth_session_factory()
+    if session_factory is None:
+        return None
+
+    normalized_username = _normalize_username(username)
+    try:
+        with session_factory() as db:
+            user = UserAccount(
+                username=normalized_username,
+                password_hash=password_hash,
+                display_name=display_name.strip() or normalized_username,
+                role=_normalize_role(role),
+                is_active=1 if is_active else 0,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            return _user_to_dict(user)
+    except IntegrityError:
+        return None
+    except SQLAlchemyError as exc:
+        global _auth_last_error
+        _auth_last_error = str(exc)
+        return None
+
+
+def get_user_by_username(username: str) -> dict[str, Any] | None:
+    session_factory = _get_auth_session_factory()
+    if session_factory is None:
+        return None
+
+    try:
+        with session_factory() as db:
+            user = db.query(UserAccount).filter(UserAccount.username == _normalize_username(username)).one_or_none()
+            return _user_to_dict(user) if user else None
+    except SQLAlchemyError as exc:
+        global _auth_last_error
+        _auth_last_error = str(exc)
+        return None
+
+
+def get_user_by_id(user_id: int) -> dict[str, Any] | None:
+    session_factory = _get_auth_session_factory()
+    if session_factory is None:
+        return None
+
+    try:
+        with session_factory() as db:
+            user = db.query(UserAccount).filter(UserAccount.id == user_id).one_or_none()
+            return _user_to_dict(user) if user else None
+    except SQLAlchemyError as exc:
+        global _auth_last_error
+        _auth_last_error = str(exc)
+        return None
+
+
+def list_user_accounts() -> list[dict[str, Any]]:
+    session_factory = _get_auth_session_factory()
+    if session_factory is None:
+        return []
+
+    try:
+        with session_factory() as db:
+            users = db.query(UserAccount).order_by(UserAccount.created_at.desc()).all()
+            return [_user_to_dict(user) for user in users]
+    except SQLAlchemyError as exc:
+        global _auth_last_error
+        _auth_last_error = str(exc)
+        return []
+
+
+def set_user_active(user_id: int, is_active: bool) -> dict[str, Any] | None:
+    session_factory = _get_auth_session_factory()
+    if session_factory is None:
+        return None
+
+    try:
+        with session_factory() as db:
+            user = db.query(UserAccount).filter(UserAccount.id == user_id).one_or_none()
+            if not user:
+                return None
+            user.is_active = 1 if is_active else 0
+            user.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(user)
+            return _user_to_dict(user)
+    except SQLAlchemyError as exc:
+        global _auth_last_error
+        _auth_last_error = str(exc)
+        return None
+
+
+def update_user_password(user_id: int, password_hash: str) -> dict[str, Any] | None:
+    session_factory = _get_auth_session_factory()
+    if session_factory is None:
+        return None
+
+    try:
+        with session_factory() as db:
+            user = db.query(UserAccount).filter(UserAccount.id == user_id).one_or_none()
+            if not user:
+                return None
+            user.password_hash = password_hash
+            user.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(user)
+            return _user_to_dict(user)
+    except SQLAlchemyError as exc:
+        global _auth_last_error
+        _auth_last_error = str(exc)
+        return None
+
+
+def mark_user_login(user_id: int) -> dict[str, Any] | None:
+    session_factory = _get_auth_session_factory()
+    if session_factory is None:
+        return None
+
+    try:
+        with session_factory() as db:
+            user = db.query(UserAccount).filter(UserAccount.id == user_id).one_or_none()
+            if not user:
+                return None
+            user.last_login_at = datetime.utcnow()
+            user.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(user)
+            return _user_to_dict(user)
+    except SQLAlchemyError as exc:
+        global _auth_last_error
+        _auth_last_error = str(exc)
+        return None
+
+
+def record_login_audit(
+    *,
+    username: str,
+    success: bool,
+    user_id: int | None = None,
+    ip_address: str = "",
+    user_agent: str = "",
+    reason: str = "",
+) -> None:
+    session_factory = _get_auth_session_factory()
+    if session_factory is None:
+        return
+
+    try:
+        with session_factory() as db:
+            db.add(
+                LoginAuditLog(
+                    user_id=user_id,
+                    username=_normalize_username(username),
+                    success=1 if success else 0,
+                    ip_address=ip_address[:80],
+                    user_agent=user_agent[:500],
+                    reason=reason[:255],
+                    created_at=datetime.utcnow(),
+                )
+            )
+            db.commit()
+    except SQLAlchemyError as exc:
+        global _auth_last_error
+        _auth_last_error = str(exc)
 
 
 def get_database_status() -> dict[str, Any]:
@@ -473,6 +720,35 @@ def get_database_url() -> str:
         f"mysql+pymysql://{quote_plus(user)}:{quote_plus(password)}"
         f"@{host}:{port}/{database}?charset={quote_plus(charset)}"
     )
+
+
+def _get_auth_session_factory():
+    if not init_auth_store():
+        return None
+    return _SessionLocal if is_database_enabled() else _AuthSessionLocal
+
+
+def _normalize_username(username: str) -> str:
+    return " ".join((username or "").strip().lower().split())
+
+
+def _normalize_role(role: str) -> str:
+    value = (role or "tester").strip().lower()
+    return value if value in {"admin", "tester"} else "tester"
+
+
+def _user_to_dict(user: UserAccount) -> dict[str, Any]:
+    return {
+        "id": user.id,
+        "username": user.username,
+        "passwordHash": user.password_hash,
+        "displayName": user.display_name,
+        "role": user.role,
+        "isActive": bool(user.is_active),
+        "createdAt": user.created_at.isoformat() + "Z" if user.created_at else "",
+        "updatedAt": user.updated_at.isoformat() + "Z" if user.updated_at else "",
+        "lastLoginAt": user.last_login_at.isoformat() + "Z" if user.last_login_at else "",
+    }
 
 
 def _session_summary(session: GenerationSession) -> dict[str, Any]:

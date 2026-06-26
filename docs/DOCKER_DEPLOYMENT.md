@@ -1,6 +1,6 @@
 # Docker Compose 部署说明
 
-> 最近更新：2026-06-26  
+> 最近更新：2026-06-27
 > 文档用途：说明如何使用 Docker / Docker Compose 一键启动测试用例智能生成系统。
 
 ## 1. 能力说明
@@ -12,6 +12,8 @@
 - `mysql`：MySQL 8 数据库，宿主机端口默认 `3307`，容器内部端口 `3306`。
 
 前端容器会把 `/api`、`/docs` 和 `/openapi.json` 代理到后端容器，因此浏览器访问前端地址即可完成页面操作和后端 API 调用。
+
+平台启动后需要先登录。默认管理员账号为 `admin / Admin@123456`，可以在 `.env.docker` 中修改。
 
 ## 2. 前置条件
 
@@ -97,6 +99,10 @@ DOCKER_MYSQL_PASSWORD=ai_test_password
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
+AUTH_SECRET_KEY=change-this-to-a-long-random-secret
+APP_ADMIN_USERNAME=admin
+APP_ADMIN_PASSWORD=Admin@123456
+APP_ADMIN_DISPLAY_NAME=管理员
 ```
 
 如果 `OPENAI_API_KEY` 留空，系统仍可使用本地演示生成器验证完整流程。
@@ -131,11 +137,14 @@ docker compose logs -f mysql
 
 容器启动后可以按以下顺序验证：
 
-1. 打开 `http://127.0.0.1:5173`，确认前端页面能访问。
-2. 打开 `http://127.0.0.1:8000/docs`，确认 FastAPI 文档能访问。
-3. 打开 `http://127.0.0.1:8000/api/database/status`，确认返回 MySQL 已启用且连接正常。
-4. 在前端 Swagger 导入面板粘贴 `docs/demo/openapi.json`，确认可以生成接口用例。
-5. 在接口执行面板运行数据库状态检查用例，确认接口执行和断言结果正常。
+1. 打开 `http://127.0.0.1:5173`，确认前端进入登录页。
+2. 使用默认管理员 `admin / Admin@123456` 登录，确认进入平台工作台。
+3. 打开 `http://127.0.0.1:8000/docs`，确认 FastAPI 文档能访问。
+4. 登录后在前端查看历史记录区域的 MySQL 状态，确认数据库已启用且连接正常。
+5. 在前端 Swagger 导入面板粘贴 `docs/demo/openapi.json`，确认可以生成接口用例。
+6. 在接口执行面板运行后端健康检查用例，确认接口执行和断言结果正常。
+
+如果直接访问受保护的业务 API，例如 `/api/database/status`，未携带登录 Cookie 时会返回 401，这是登录系统生效后的预期结果。
 
 ## 8. 端口冲突处理
 

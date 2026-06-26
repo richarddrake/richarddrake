@@ -3,17 +3,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 import httpx
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.auth.dependencies import require_login
+from app.auth.router import router as auth_router
+from app.auth.service import init_auth_system
 from app.schemas import UploadedMaterial, normalize_case
 from app.services.api_runner import run_api_load_test, run_api_test, run_api_test_suite
 from app.services.case_quality import build_coverage_report, enrich_case_dict, enrich_cases
@@ -41,6 +45,20 @@ from app.services.ui_runner import run_ui_test
 BASE_DIR = Path(__file__).resolve().parent.parent
 GENERATED_DIR = BASE_DIR / "generated"
 UI_ARTIFACTS_DIR = GENERATED_DIR / "ui-runs"
+
+
+def _cors_origins() -> list[str]:
+    configured = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+    if configured:
+        return [item.strip() for item in configured.split(",") if item.strip()]
+    return [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:5174",
+        "http://127.0.0.1:4173",
+        "http://localhost:4173",
+    ]
 
 
 class ApiTestRunRequest(BaseModel):
@@ -127,16 +145,18 @@ class UiTestRunRequest(BaseModel):
 app = FastAPI(title="测试用例智能生成系统", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth_router)
 
 
 @app.on_event("startup")
 def startup() -> None:
     init_database()
+    init_auth_system()
 
 
 @app.get("/")
@@ -148,12 +168,12 @@ async def root() -> dict[str, str]:
     }
 
 
-@app.get("/api/database/status")
+@app.get("/api/database/status", dependencies=[Depends(require_login)])
 async def database_status() -> dict:
     return get_database_status()
 
 
-@app.get("/api/history")
+@app.get("/api/history", dependencies=[Depends(require_login)])
 async def history(
     limit: int = Query(default=20, ge=1, le=100),
     keyword: str = Query(default=""),
@@ -161,7 +181,7 @@ async def history(
     return list_history(limit=limit, keyword=keyword)
 
 
-@app.get("/api/history/{session_id}")
+@app.get("/api/history/{session_id}", dependencies=[Depends(require_login)])
 async def history_detail(session_id: str) -> dict:
     detail = get_history_detail(session_id)
     if not detail:
@@ -169,7 +189,7 @@ async def history_detail(session_id: str) -> dict:
     return detail
 
 
-@app.post("/api/api-tests/run")
+@app.post("/api/api-tests/run", dependencies=[Depends(require_login)])
 async def run_api_test_case(request: ApiTestRunRequest) -> dict:
     try:
         result = await run_api_test(request.model_dump())
@@ -183,7 +203,7 @@ async def run_api_test_case(request: ApiTestRunRequest) -> dict:
     return result
 
 
-@app.post("/api/api-tests/suite")
+@app.post("/api/api-tests/suite", dependencies=[Depends(require_login)])
 async def run_api_test_suite_case(request: ApiTestSuiteRequest) -> dict:
     try:
         result = await run_api_test_suite(request.model_dump())
@@ -197,7 +217,7 @@ async def run_api_test_suite_case(request: ApiTestSuiteRequest) -> dict:
     return result
 
 
-@app.post("/api/api-tests/load")
+@app.post("/api/api-tests/load", dependencies=[Depends(require_login)])
 async def run_api_load_test_case(request: ApiLoadTestRequest) -> dict:
     try:
         result = await run_api_load_test(request.model_dump())
@@ -211,12 +231,12 @@ async def run_api_load_test_case(request: ApiLoadTestRequest) -> dict:
     return result
 
 
-@app.get("/api/api-tests/history")
+@app.get("/api/api-tests/history", dependencies=[Depends(require_login)])
 async def api_test_history(limit: int = Query(default=20, ge=1, le=100)) -> dict:
     return list_api_test_runs(limit=limit)
 
 
-@app.post("/api/ui-tests/run")
+@app.post("/api/ui-tests/run", dependencies=[Depends(require_login)])
 async def run_ui_test_case(request: UiTestRunRequest) -> dict:
     try:
         result = await run_ui_test(request.model_dump(by_alias=True))
@@ -228,12 +248,12 @@ async def run_ui_test_case(request: UiTestRunRequest) -> dict:
     return result
 
 
-@app.get("/api/ui-tests/history")
+@app.get("/api/ui-tests/history", dependencies=[Depends(require_login)])
 async def ui_test_history(limit: int = Query(default=20, ge=1, le=100)) -> dict:
     return list_ui_test_runs(limit=limit)
 
 
-@app.get("/api/ui-tests/artifacts/{run_id}/{filename}")
+@app.get("/api/ui-tests/artifacts/{run_id}/{filename}", dependencies=[Depends(require_login)])
 async def ui_test_artifact(run_id: str, filename: str) -> FileResponse:
     safe_run_id = Path(run_id).name
     safe_filename = Path(filename).name
@@ -250,7 +270,7 @@ async def ui_test_artifact(run_id: str, filename: str) -> FileResponse:
     return FileResponse(path, media_type=media_type, filename=safe_filename)
 
 
-@app.post("/api/cases/execute")
+@app.post("/api/cases/execute", dependencies=[Depends(require_login)])
 async def execute_generated_case(request: GeneratedCaseExecuteRequest) -> dict:
     payload = _case_api_payload(request.case, request.api_test, request.variables)
     try:
@@ -266,7 +286,7 @@ async def execute_generated_case(request: GeneratedCaseExecuteRequest) -> dict:
     return result
 
 
-@app.post("/api/openapi/import")
+@app.post("/api/openapi/import", dependencies=[Depends(require_login)])
 async def import_openapi(request: OpenApiImportRequest) -> dict:
     try:
         data = await generate_cases_from_openapi(
@@ -299,19 +319,19 @@ async def import_openapi(request: OpenApiImportRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/coverage/analyze")
+@app.post("/api/coverage/analyze", dependencies=[Depends(require_login)])
 async def analyze_coverage(request: CoverageAnalyzeRequest) -> dict:
     enriched = [enrich_case_dict(item, request.cases) for item in request.cases]
     return build_coverage_report(enriched)
 
 
-@app.post("/api/cases/review")
+@app.post("/api/cases/review", dependencies=[Depends(require_login)])
 async def review_cases(request: CaseReviewRequest) -> dict:
     enriched = [enrich_case_dict(item, request.cases) for item in request.cases]
     return build_case_review(enriched)
 
 
-@app.post("/api/generate")
+@app.post("/api/generate", dependencies=[Depends(require_login)])
 async def generate(
     requirements: str = Form(default=""),
     context: str = Form(default=""),
@@ -337,7 +357,7 @@ async def generate(
     )
 
 
-@app.get("/api/download/{filename}")
+@app.get("/api/download/{filename}", dependencies=[Depends(require_login)])
 async def download(filename: str) -> FileResponse:
     safe_name = Path(filename).name
     if safe_name != filename or not safe_name.endswith(".xlsx"):

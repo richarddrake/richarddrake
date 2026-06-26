@@ -132,6 +132,94 @@ svg {
   min-height: 100vh;
 }
 
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+}
+
+.auth-panel {
+  width: min(460px, 100%);
+  padding: 28px;
+  border: 1px solid color-mix(in srgb, var(--cyan), transparent 50%);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(30, 211, 255, 0.12), transparent 34%),
+    color-mix(in srgb, var(--surface), transparent 5%);
+  box-shadow: var(--shadow), var(--glow);
+  backdrop-filter: blur(18px);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.auth-brand h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.login-form {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-submit {
+  width: 100%;
+  justify-content: center;
+}
+
+.auth-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--rose), transparent 48%);
+  border-radius: 8px;
+  color: var(--rose);
+  background: color-mix(in srgb, var(--rose), transparent 90%);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.auth-error svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+}
+
+.inline-error {
+  margin-bottom: 4px;
+}
+
+.auth-hints {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auth-hints strong {
+  color: var(--text);
+}
+
+.auth-loading-panel {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -293,6 +381,41 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.user-chip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  max-width: 280px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+.user-chip svg {
+  width: 16px;
+  height: 16px;
+  color: var(--teal);
+}
+
+.user-chip span {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-chip small {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .signal-row {
@@ -1724,6 +1847,90 @@ td {
   background: var(--teal);
 }
 
+.user-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr);
+  gap: 16px;
+}
+
+.user-create-form,
+.user-list {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.panel-subheading {
+  display: grid;
+  gap: 5px;
+}
+
+.panel-subheading strong {
+  font-size: 18px;
+}
+
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.check-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--teal);
+}
+
+.user-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.user-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(30, 211, 255, 0.09), transparent 46%),
+    var(--surface-strong);
+}
+
+.user-card.inactive {
+  opacity: 0.72;
+}
+
+.user-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.user-card h3,
+.user-card p {
+  overflow-wrap: anywhere;
+}
+
+.user-card h3 {
+  margin-bottom: 0;
+  font-size: 17px;
+}
+
+.user-card p,
+.user-card small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .history-toolbar {
   display: grid;
   grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1.4fr) auto;
@@ -2304,6 +2511,10 @@ td {
     grid-template-columns: 1fr;
   }
 
+  .user-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
   .report-grid,
   .report-summary-grid,
   .review-summary,
@@ -2372,6 +2583,11 @@ td {
 
   .top-actions {
     justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .user-chip {
+    max-width: 100%;
   }
 
   h1 {
@@ -2381,6 +2597,22 @@ td {
   .signal-row,
   .status-strip {
     grid-template-columns: 1fr;
+  }
+
+  .auth-page {
+    padding: 14px;
+  }
+
+  .auth-panel {
+    padding: 20px;
+  }
+
+  .auth-brand {
+    align-items: flex-start;
+  }
+
+  .auth-brand h1 {
+    font-size: 24px;
   }
 
   .api-form-row,

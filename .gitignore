@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 generated/*.xlsx
 generated/*.log
+generated/*.db
 generated/logs/
 generated/ui-runs/
 .env

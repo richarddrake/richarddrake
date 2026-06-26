@@ -28,6 +28,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 模型接入配置说明：[`docs/MODEL_SETUP.md`](docs/MODEL_SETUP.md)
 - MySQL 配置说明：[`docs/MYSQL_SETUP.md`](docs/MYSQL_SETUP.md)
 - Docker Compose 部署说明：[`docs/DOCKER_DEPLOYMENT.md`](docs/DOCKER_DEPLOYMENT.md)
+- 登录系统说明：[`docs/AUTHENTICATION.md`](docs/AUTHENTICATION.md)
 - 接口测试执行说明：[`docs/API_TEST_EXECUTION.md`](docs/API_TEST_EXECUTION.md)
 - Playwright UI 自动化说明：[`docs/UI_AUTOMATION_PLAYWRIGHT.md`](docs/UI_AUTOMATION_PLAYWRIGHT.md)
 - 测试验证案例与量化结果：[`docs/TESTING_EVIDENCE.md`](docs/TESTING_EVIDENCE.md)
@@ -67,6 +68,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 支持失败分析证据链、置信度、是否建议创建缺陷和是否建议更新用例
 - 支持请求/响应敏感 Header 脱敏，并支持按环境变量启用更严格的内网访问限制
 - 支持 Playwright Web UI 自动化基础执行：受控步骤 DSL、Chromium/Firefox/WebKit、页面断言、失败截图、trace 证据、UI 执行历史和报告中心汇总
+- 支持账号密码登录、HttpOnly Cookie 会话、管理员用户管理、测试人员权限和登录审计
 - 支持 Docker Compose 一键启动 Vue 前端、FastAPI 后端和 MySQL，便于演示和搭建可复现测试环境
 
 ## 测试报告能力
@@ -220,6 +222,15 @@ VITE_API_BASE_URL=http://127.0.0.1:8001
 http://127.0.0.1:5173
 ```
 
+首次打开前端会进入登录页。默认管理员账号由环境变量控制，未配置时使用：
+
+```text
+用户名：admin
+密码：Admin@123456
+```
+
+登录系统使用 HttpOnly Cookie 保持会话；如果本地未启用 MySQL，认证数据会保存到 `generated/auth.db`，生成历史仍按原有 MySQL 开关控制。
+
 ## Docker Compose 演示启动
 
 本地开发仍推荐使用上面的固定启动流程。若你已经安装 Docker Desktop，也可以用 Compose 一键启动前端、后端和 MySQL：
@@ -242,6 +253,8 @@ docker compose up --build
 后端文档：http://127.0.0.1:8000/docs
 MySQL：127.0.0.1:3307
 ```
+
+Docker 演示环境同样会初始化默认管理员，账号密码默认是 `admin / Admin@123456`，可通过 `.env.docker` 中的 `APP_ADMIN_USERNAME`、`APP_ADMIN_PASSWORD` 和 `AUTH_SECRET_KEY` 修改。
 
 停止环境：
 
@@ -290,6 +303,8 @@ MYSQL_DATABASE=ai_testcase
 MYSQL_CHARSET=utf8mb4
 ```
 
+登录系统也会在数据库中创建 `users` 和 `login_audit_logs` 表；如果 `DATABASE_ENABLED=false`，登录用户会保存到本地 `generated/auth.db`，便于不连接 MySQL 时继续演示平台。
+
 后端启动时会自动创建表。连接状态可以访问：
 
 ```text
@@ -300,10 +315,10 @@ http://127.0.0.1:8000/api/database/status
 
 ## 接口测试执行
 
-前端“接口执行”面板提供一个默认的本地健康检查用例：
+前端“接口执行”面板提供一个默认的后端健康检查用例：
 
 ```text
-GET http://127.0.0.1:8000/api/database/status
+GET http://127.0.0.1:8000/
 ```
 
 你可以修改以下字段执行自己的接口测试：

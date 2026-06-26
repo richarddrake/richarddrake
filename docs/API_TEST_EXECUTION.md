@@ -7,14 +7,14 @@
 后端：
 
 ```powershell
-cd C:\Users\Administrator\Documents\AI_Test
+cd D:\AI_code\AI_Test
 .\scripts\start.cmd
 ```
 
 前端另开窗口：
 
 ```powershell
-cd C:\Users\Administrator\Documents\AI_Test
+cd D:\AI_code\AI_Test
 .\scripts\start-frontend.cmd
 ```
 
@@ -24,6 +24,8 @@ cd C:\Users\Administrator\Documents\AI_Test
 http://127.0.0.1:5173
 ```
 
+前端打开后需要先登录。默认管理员账号为 `admin / Admin@123456`，可通过环境变量调整。
+
 ## 字段断言 JSON
 
 字段断言写在“字段断言 JSON”中，支持数组格式：
@@ -31,11 +33,11 @@ http://127.0.0.1:5173
 ```json
 [
   {
-    "name": "connected 字段为 true",
+    "name": "服务状态为 ok",
     "source": "json",
-    "path": "$.connected",
+    "path": "$.status",
     "operator": "equals",
-    "expected": true
+    "expected": "ok"
   },
   {
     "name": "响应头 Trace 存在",
@@ -86,11 +88,11 @@ $.items[*].id        数组展开
 ```json
 {
   "type": "object",
-  "required": ["enabled", "connected", "message"],
+  "required": ["status", "service", "docs"],
   "properties": {
-    "enabled": { "type": "boolean" },
-    "connected": { "type": "boolean" },
-    "message": { "type": "string" }
+    "status": { "type": "string" },
+    "service": { "type": "string" },
+    "docs": { "type": "string" }
   }
 }
 ```
