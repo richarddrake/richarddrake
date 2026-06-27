@@ -3510,10 +3510,68 @@ async function readErrorMessage(response) {
   const text = await response.text();
   try {
     const data = JSON.parse(text);
-    return data.detail || text || "接口执行请求失败";
+    return formatErrorDetail(data.detail) || text || "接口执行请求失败";
   } catch {
     return text || "接口执行请求失败";
   }
+}
+
+function formatErrorDetail(detail) {
+  if (!detail) {
+    return "";
+  }
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail.map(formatErrorDetail).filter(Boolean).join("；");
+  }
+  if (typeof detail === "object") {
+    const message = normalizeValidationMessage(detail.msg || detail.message || detail.detail || "");
+    const location = Array.isArray(detail.loc) ? detail.loc.filter((item) => item !== "body").join(".") : "";
+    if (message && location) {
+      return `${errorFieldLabel(location)}：${message}`;
+    }
+    if (message) {
+      return String(message);
+    }
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return String(detail);
+    }
+  }
+  return String(detail);
+}
+
+function errorFieldLabel(location) {
+  const labels = {
+    username: "用户名",
+    password: "密码",
+    displayName: "显示名称",
+    role: "角色",
+    isActive: "启用状态",
+    oldPassword: "旧密码",
+    newPassword: "新密码",
+  };
+  return labels[location] || location;
+}
+
+function normalizeValidationMessage(message) {
+  const text = String(message || "");
+  const atLeastMatch = text.match(/String should have at least (\d+) characters?/i);
+  if (atLeastMatch) {
+    return `至少需要 ${atLeastMatch[1]} 位。`;
+  }
+  const atMostMatch = text.match(/String should have at most (\d+) characters?/i);
+  if (atMostMatch) {
+    return `最多允许 ${atMostMatch[1]} 位。`;
+  }
+  const missingMatch = text.match(/Field required/i);
+  if (missingMatch) {
+    return "不能为空。";
+  }
+  return text;
 }
 
 function isSupportedFile(file) {
