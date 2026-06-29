@@ -30,6 +30,7 @@ scripts/                   Windows 启动和端口释放脚本
 - MySQL 配置说明：[`docs/MYSQL_SETUP.md`](docs/MYSQL_SETUP.md)
 - Docker Compose 部署说明：[`docs/DOCKER_DEPLOYMENT.md`](docs/DOCKER_DEPLOYMENT.md)
 - GitHub Actions CD 部署说明：[`docs/CD_DEPLOYMENT.md`](docs/CD_DEPLOYMENT.md)
+- Redis 高并发能力说明：[`docs/REDIS_ARCHITECTURE.md`](docs/REDIS_ARCHITECTURE.md)
 - 登录系统说明：[`docs/AUTHENTICATION.md`](docs/AUTHENTICATION.md)
 - 接口测试执行说明：[`docs/API_TEST_EXECUTION.md`](docs/API_TEST_EXECUTION.md)
 - Playwright UI 自动化说明：[`docs/UI_AUTOMATION_PLAYWRIGHT.md`](docs/UI_AUTOMATION_PLAYWRIGHT.md)
@@ -73,6 +74,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 支持 Playwright Web UI 自动化基础执行：受控步骤 DSL、Chromium/Firefox/WebKit、页面断言、失败截图、trace 证据、UI 执行历史和报告中心汇总
 - 支持账号密码登录、HttpOnly Cookie 会话、管理员用户管理、测试人员权限和登录审计
 - 支持 Docker Compose 一键启动 Vue 前端、FastAPI 后端和 MySQL，便于演示和搭建可复现测试环境
+- 支持 Redis 缓存、后台任务队列、任务状态、提交限流和分布式锁，用于提升接口执行、并发测试和 UI 自动化等耗时场景下的并发处理能力
 - 支持 GitHub Actions CI/CD，在 push 和 pull request 时自动执行后端编译、前端构建、Compose 配置校验和 Docker 镜像构建检查，并在 main 分支推送后发布前后端镜像到 GHCR；配置服务器 SSH secrets 后可自动拉取镜像并完成 Docker Compose 部署
 
 ## 测试报告能力
@@ -256,9 +258,10 @@ docker compose up --build
 后端：http://127.0.0.1:8000
 后端文档：http://127.0.0.1:8000/docs
 MySQL：127.0.0.1:3307
+Redis：127.0.0.1:6379
 ```
 
-Docker 演示环境同样会初始化默认管理员，账号密码默认是 `admin / Admin@123456`，可通过 `.env.docker` 中的 `APP_ADMIN_USERNAME`、`APP_ADMIN_PASSWORD` 和 `AUTH_SECRET_KEY` 修改。
+Docker 演示环境同样会初始化默认管理员，账号密码默认是 `admin / Admin@123456`，可通过 `.env.docker` 中的 `APP_ADMIN_USERNAME`、`APP_ADMIN_PASSWORD` 和 `AUTH_SECRET_KEY` 修改。Redis 默认启用，用于任务中心、历史缓存和后台执行队列。
 
 停止环境：
 

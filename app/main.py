@@ -39,6 +39,8 @@ from app.services.feishu_reader import build_feishu_context, fetch_feishu_refere
 from app.services.generator import GenerationEvent, generate_test_cases
 from app.services.material_parser import build_material_context, read_upload_materials
 from app.services.openapi_importer import generate_cases_from_openapi
+from app.services.redis_service import cached_json, close_redis, init_redis, invalidate_cache_namespace, redis_key, redis_status
+from app.services.task_queue import cancel_task, enqueue_task, get_task, list_tasks, queue_status, start_task_workers, stop_task_workers
 from app.services.ui_runner import run_ui_test
 
 
@@ -154,9 +156,17 @@ app.include_router(auth_router)
 
 
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
     init_database()
     init_auth_system()
+    await init_redis()
+    await start_task_workers()
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    await stop_task_workers()
+    await close_redis()
 
 
 @app.get("/")
@@ -173,17 +183,27 @@ async def database_status() -> dict:
     return get_database_status()
 
 
+@app.get("/api/redis/status", dependencies=[Depends(require_login)])
+async def redis_runtime_status() -> dict:
+    return {
+        "redis": await redis_status(),
+        "queue": await queue_status(),
+    }
+
+
 @app.get("/api/history", dependencies=[Depends(require_login)])
 async def history(
     limit: int = Query(default=20, ge=1, le=100),
     keyword: str = Query(default=""),
 ) -> dict:
-    return list_history(limit=limit, keyword=keyword)
+    cache_key = redis_key("cache", "history", limit, keyword.strip() or "_")
+    return await cached_json(cache_key, 30, lambda: asyncio.to_thread(list_history, limit, keyword))
 
 
 @app.get("/api/history/{session_id}", dependencies=[Depends(require_login)])
 async def history_detail(session_id: str) -> dict:
-    detail = get_history_detail(session_id)
+    cache_key = redis_key("cache", "history-detail", session_id)
+    detail = await cached_json(cache_key, 60, lambda: asyncio.to_thread(get_history_detail, session_id))
     if not detail:
         raise HTTPException(status_code=404, detail="历史记录不存在，或 MySQL 暂不可用。")
     return detail
@@ -199,6 +219,7 @@ async def run_api_test_case(request: ApiTestRunRequest) -> dict:
     if not result.get("passed"):
         result["failureAnalysis"] = analyze_failure(result)
     history_status = await asyncio.to_thread(record_api_test_run, result)
+    await invalidate_cache_namespace("api-runs")
     result["historyStatus"] = history_status
     return result
 
@@ -213,6 +234,7 @@ async def run_api_test_suite_case(request: ApiTestSuiteRequest) -> dict:
     if not result.get("passed"):
         result["failureAnalysis"] = analyze_failure(result)
     history_status = await asyncio.to_thread(record_api_test_run, result)
+    await invalidate_cache_namespace("api-runs")
     result["historyStatus"] = history_status
     return result
 
@@ -227,13 +249,15 @@ async def run_api_load_test_case(request: ApiLoadTestRequest) -> dict:
     if not result.get("passed"):
         result["failureAnalysis"] = analyze_failure(result)
     history_status = await asyncio.to_thread(record_api_test_run, result)
+    await invalidate_cache_namespace("api-runs")
     result["historyStatus"] = history_status
     return result
 
 
 @app.get("/api/api-tests/history", dependencies=[Depends(require_login)])
 async def api_test_history(limit: int = Query(default=20, ge=1, le=100)) -> dict:
-    return list_api_test_runs(limit=limit)
+    cache_key = redis_key("cache", "api-runs", limit)
+    return await cached_json(cache_key, 20, lambda: asyncio.to_thread(list_api_test_runs, limit))
 
 
 @app.post("/api/ui-tests/run", dependencies=[Depends(require_login)])
@@ -244,13 +268,61 @@ async def run_ui_test_case(request: UiTestRunRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     history_status = await asyncio.to_thread(record_ui_test_run, result)
+    await invalidate_cache_namespace("ui-runs")
     result["historyStatus"] = history_status
     return result
 
 
 @app.get("/api/ui-tests/history", dependencies=[Depends(require_login)])
 async def ui_test_history(limit: int = Query(default=20, ge=1, le=100)) -> dict:
-    return list_ui_test_runs(limit=limit)
+    cache_key = redis_key("cache", "ui-runs", limit)
+    return await cached_json(cache_key, 20, lambda: asyncio.to_thread(list_ui_test_runs, limit))
+
+
+@app.post("/api/tasks/api-tests/run")
+async def enqueue_api_test_case(request: ApiTestRunRequest, current_user: dict[str, Any] = Depends(require_login)) -> dict:
+    return {"task": await _enqueue_or_raise("api_run", request.model_dump(), current_user)}
+
+
+@app.post("/api/tasks/api-tests/suite")
+async def enqueue_api_test_suite_case(request: ApiTestSuiteRequest, current_user: dict[str, Any] = Depends(require_login)) -> dict:
+    return {"task": await _enqueue_or_raise("api_suite", request.model_dump(), current_user)}
+
+
+@app.post("/api/tasks/api-tests/load")
+async def enqueue_api_load_test_case(request: ApiLoadTestRequest, current_user: dict[str, Any] = Depends(require_login)) -> dict:
+    return {"task": await _enqueue_or_raise("api_load", request.model_dump(), current_user)}
+
+
+@app.post("/api/tasks/ui-tests/run")
+async def enqueue_ui_test_case(request: UiTestRunRequest, current_user: dict[str, Any] = Depends(require_login)) -> dict:
+    return {"task": await _enqueue_or_raise("ui_run", request.model_dump(by_alias=True), current_user)}
+
+
+@app.get("/api/tasks")
+async def task_history(limit: int = Query(default=20, ge=1, le=100), current_user: dict[str, Any] = Depends(require_login)) -> dict:
+    return await list_tasks(limit=limit, user=current_user)
+
+
+@app.get("/api/tasks/{task_id}")
+async def task_detail(task_id: str, current_user: dict[str, Any] = Depends(require_login)) -> dict:
+    task = await get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期。")
+    if current_user.get("role") != "admin" and task.get("username") != current_user.get("username"):
+        raise HTTPException(status_code=403, detail="无权查看该任务。")
+    return {"task": task}
+
+
+@app.post("/api/tasks/{task_id}/cancel")
+async def task_cancel(task_id: str, current_user: dict[str, Any] = Depends(require_login)) -> dict:
+    try:
+        task = await cancel_task(task_id, current_user)
+        return {"task": task}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @app.get("/api/ui-tests/artifacts/{run_id}/{filename}", dependencies=[Depends(require_login)])
@@ -282,6 +354,7 @@ async def execute_generated_case(request: GeneratedCaseExecuteRequest) -> dict:
     result["caseTitle"] = request.case.get("title") or payload.get("name") or ""
     result["failureAnalysis"] = analyze_failure(result, request.case)
     history_status = await asyncio.to_thread(record_api_test_run, result)
+    await invalidate_cache_namespace("api-runs")
     result["historyStatus"] = history_status
     return result
 
@@ -307,6 +380,7 @@ async def import_openapi(request: OpenApiImportRequest) -> dict:
             cases=cases,
             excel_path=excel_path,
         )
+        await invalidate_cache_namespace("history")
         data["cases"] = [case.to_dict() for case in cases]
         data["coverageReport"] = build_coverage_report(cases)
         data["sessionId"] = session_id
@@ -429,6 +503,7 @@ async def _stream_generation(
             cases=cases,
             excel_path=excel_path,
         )
+        await invalidate_cache_namespace("history")
         if history_status == "saved":
             yield _sse("thought", {"text": "历史记录已写入 MySQL。"})
         elif history_status == "disabled":
@@ -453,6 +528,15 @@ async def _stream_generation(
 def _sse(event: str, data: dict) -> str:
     payload = json.dumps(data, ensure_ascii=False)
     return f"event: {event}\ndata: {payload}\n\n"
+
+
+async def _enqueue_or_raise(kind: str, payload: dict[str, Any], current_user: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return await enqueue_task(kind, payload, current_user)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
 
 
 def _case_api_payload(case: dict[str, Any], api_test: dict[str, Any], variables: dict[str, Any]) -> dict[str, Any]:

@@ -13,6 +13,7 @@
 4. 构建前后端 Docker 镜像。
 5. 发布镜像到 GitHub Container Registry。
 6. 如果已配置服务器 SSH secrets，自动登录服务器，拉取最新镜像并执行 `docker compose up -d`。
+7. 生产 Compose 同时运行 MySQL 和 Redis，Redis 用于缓存、后台任务队列、任务状态、限流和分布式锁。
 
 PR 场景只做检查，不会发布镜像，也不会部署服务器。
 
@@ -88,6 +89,9 @@ AUTH_SECRET_KEY=change-this-to-a-long-random-production-secret
 APP_ADMIN_USERNAME=admin
 APP_ADMIN_PASSWORD=change-this-admin-password
 OPENAI_API_KEY=
+REDIS_ENABLED=true
+REDIS_URL=redis://redis:6379/0
+TASK_WORKER_CONCURRENCY=2
 ```
 
 ## 6. 服务器部署目录

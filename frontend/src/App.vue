@@ -81,6 +81,10 @@
           <BarChart3 aria-hidden="true" />
           报告中心
         </a>
+        <a class="nav-item" href="#taskCenterTitle" @click="fetchTasks">
+          <ListChecks aria-hidden="true" />
+          任务中心
+        </a>
         <a class="nav-item" href="#defectTitle" @click="syncDefectCandidates">
           <AlertTriangle aria-hidden="true" />
           缺陷跟踪
@@ -138,6 +142,60 @@
       </section>
 
       <section class="workspace">
+        <section class="panel task-center-panel" aria-labelledby="taskCenterTitle">
+          <div class="panel-heading result-heading">
+            <div>
+              <p class="eyebrow">Redis Runtime</p>
+              <h2 id="taskCenterTitle">任务中心</h2>
+            </div>
+            <div class="result-actions">
+              <button class="icon-button" type="button" aria-label="刷新任务中心" title="刷新任务中心" :disabled="isTaskLoading" @click="fetchTaskCenter">
+                <RefreshCw aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <div class="task-center-grid">
+            <div class="task-status-card">
+              <span>Redis</span>
+              <strong :class="{ muted: !redisRuntime.redis?.connected }">{{ redisRuntime.redis?.connected ? "已连接" : redisRuntime.redis?.enabled ? "未连接" : "未启用" }}</strong>
+              <small>{{ redisRuntime.redis?.message || "等待状态检测" }}</small>
+            </div>
+            <div class="task-status-card">
+              <span>Queue</span>
+              <strong>{{ redisRuntime.queue?.enabled ? `${redisRuntime.queue.workers || 0} worker` : "未启用" }}</strong>
+              <small>排队 {{ redisRuntime.queue?.queued || 0 }} · {{ redisRuntime.queue?.message || "等待状态检测" }}</small>
+            </div>
+            <div class="task-status-card">
+              <span>Mode</span>
+              <strong>Async Dispatch</strong>
+              <small>接口、并发和 UI 任务可提交到 Redis 后台执行</small>
+            </div>
+          </div>
+
+          <div class="task-list">
+            <article v-for="task in taskItems" :key="task.id" class="task-item-card" :class="`task-${task.status}`">
+              <header>
+                <div>
+                  <span class="pill">{{ taskKindLabel(task.kind) }}</span>
+                  <span class="pill">{{ taskStatusLabel(task.status) }}</span>
+                </div>
+                <button v-if="canCancelTask(task)" class="secondary-button compact-button" type="button" @click="cancelTask(task.id)">取消</button>
+              </header>
+              <strong>{{ task.name || task.id }}</strong>
+              <p>{{ task.message || task.error || "等待执行" }}</p>
+              <div class="task-progress-track" aria-hidden="true">
+                <span :style="{ width: `${Number(task.progress) || 0}%` }"></span>
+              </div>
+              <small>{{ formatDate(task.createdAt) }} · {{ task.id }}</small>
+              <button v-if="task.result" class="secondary-button compact-button" type="button" @click="loadTaskResult(task)">载入结果</button>
+            </article>
+            <div v-if="!taskItems.length" class="empty-state task-empty">
+              {{ isTaskLoading ? "正在读取 Redis 任务" : "暂无后台任务，点击接口或 UI 的“入队执行”后会显示在这里" }}
+            </div>
+          </div>
+        </section>
+
         <section class="panel composer-panel" aria-labelledby="inputTitle">
           <div class="panel-heading">
             <div>
@@ -557,6 +615,10 @@
               <RefreshCw aria-hidden="true" />
               重置
             </button>
+            <button class="secondary-button" type="button" :disabled="isUiRunning" @click="enqueueUiTest">
+              <ListChecks aria-hidden="true" />
+              入队执行
+            </button>
             <button class="primary-button" type="button" :disabled="isUiRunning" @click="runUiTest">
               <Send aria-hidden="true" />
               {{ isUiRunning ? "执行中" : "执行 UI 用例" }}
@@ -874,9 +936,21 @@
                 <ListChecks aria-hidden="true" />
                 执行用例集
               </button>
+              <button class="secondary-button" type="button" :disabled="isApiRunning" @click="enqueueApiSuite">
+                <ListChecks aria-hidden="true" />
+                用例集入队
+              </button>
               <button class="secondary-button" type="button" :disabled="isApiRunning" @click="runApiLoad">
                 <Gauge aria-hidden="true" />
                 并发执行
+              </button>
+              <button class="secondary-button" type="button" :disabled="isApiRunning" @click="enqueueApiLoad">
+                <Gauge aria-hidden="true" />
+                并发入队
+              </button>
+              <button class="secondary-button" type="button" :disabled="isApiRunning" @click="enqueueApiTest">
+                <ListChecks aria-hidden="true" />
+                接口入队
               </button>
               <button class="primary-button" type="button" :disabled="isApiRunning" @click="runApiTest">
                 <Send aria-hidden="true" />
@@ -1364,7 +1438,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
   AlertTriangle,
   BarChart3,
@@ -1483,6 +1557,10 @@ const localRunDetails = ref({});
 const executingCaseId = ref("");
 const defectRecords = ref({});
 const streamMessages = ref([]);
+const redisRuntime = ref({ redis: {}, queue: {} });
+const taskItems = ref([]);
+const isTaskLoading = ref(false);
+const taskPollTimer = ref(null);
 let toastTimer = null;
 
 const isAuthenticated = computed(() => Boolean(currentUser.value));
@@ -1668,6 +1746,11 @@ onMounted(async () => {
   document.body.classList.add("dark");
   loadDefectRecords();
   await loadCurrentUser();
+  startTaskPolling();
+});
+
+onUnmounted(() => {
+  stopTaskPolling();
 });
 
 function toggleTheme() {
@@ -1697,6 +1780,7 @@ async function loadCurrentUser() {
 async function loadInitialData() {
   await Promise.allSettled([
     fetchDatabaseStatus(),
+    fetchTaskCenter(),
     fetchHistory(),
     fetchApiRunHistory(),
     fetchUiRunHistory(),
@@ -2336,6 +2420,218 @@ async function runApiLoad() {
     showToast(error.message || "并发执行失败");
   } finally {
     isApiRunning.value = false;
+  }
+}
+
+async function enqueueApiTest() {
+  let payload;
+  try {
+    payload = buildApiPayload();
+  } catch (error) {
+    showToast(error.message || "接口配置格式不正确");
+    return;
+  }
+  await submitTask("/api/tasks/api-tests/run", payload, "接口任务已进入后台队列。");
+}
+
+async function enqueueApiSuite() {
+  let steps;
+  let variables;
+  try {
+    steps = parseJsonText(apiTest.value.suiteStepsText, [], "用例集步骤 JSON");
+    variables = parseJsonText(apiTest.value.variablesText, {}, "环境变量 JSON");
+  } catch (error) {
+    showToast(error.message || "用例集配置格式不正确");
+    return;
+  }
+  if (!Array.isArray(steps) || !steps.length) {
+    showToast("请在用例集步骤 JSON 中至少配置 1 个步骤。");
+    return;
+  }
+  await submitTask(
+    "/api/tasks/api-tests/suite",
+    {
+      name: `${apiTest.value.name || "接口"}用例集`,
+      variables,
+      steps,
+      stopOnFailure: false,
+    },
+    "接口用例集已进入后台队列。",
+  );
+}
+
+async function enqueueApiLoad() {
+  let payload;
+  try {
+    payload = buildApiPayload();
+  } catch (error) {
+    showToast(error.message || "并发配置格式不正确");
+    return;
+  }
+  const loadSettings = normalizeLoadSettings();
+  if (!loadSettings.valid) {
+    showToast(loadSettings.message);
+    return;
+  }
+  await submitTask(
+    "/api/tasks/api-tests/load",
+    {
+      ...payload,
+      repeat: loadSettings.repeat,
+      concurrency: loadSettings.concurrency,
+    },
+    "并发执行任务已进入后台队列。",
+  );
+}
+
+async function enqueueUiTest() {
+  let payload;
+  try {
+    payload = buildUiPayload();
+  } catch (error) {
+    showToast(error.message || "UI 自动化配置格式不正确");
+    return;
+  }
+  await submitTask("/api/tasks/ui-tests/run", payload, "UI 自动化任务已进入后台队列。");
+}
+
+async function submitTask(endpoint, payload, successMessage) {
+  try {
+    const response = await apiFetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+    const data = await response.json();
+    upsertTask(data.task);
+    await fetchTaskCenter();
+    showToast(successMessage);
+  } catch (error) {
+    showToast(error.message || "任务提交失败");
+  }
+}
+
+async function fetchTaskCenter() {
+  await Promise.allSettled([fetchRedisStatus(), fetchTasks()]);
+}
+
+async function fetchRedisStatus() {
+  if (!isAuthenticated.value) {
+    return;
+  }
+  try {
+    const response = await apiFetch("/api/redis/status");
+    if (!response.ok) {
+      return;
+    }
+    redisRuntime.value = await response.json();
+  } catch {
+    redisRuntime.value = { redis: {}, queue: {} };
+  }
+}
+
+async function fetchTasks() {
+  if (!isAuthenticated.value || isTaskLoading.value) {
+    return;
+  }
+  isTaskLoading.value = true;
+  try {
+    const response = await apiFetch("/api/tasks?limit=20");
+    if (!response.ok) {
+      return;
+    }
+    const data = await response.json();
+    taskItems.value = data.items || [];
+  } catch {
+    taskItems.value = [];
+  } finally {
+    isTaskLoading.value = false;
+  }
+}
+
+async function cancelTask(taskId) {
+  try {
+    const response = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+    const data = await response.json();
+    upsertTask(data.task);
+    showToast("任务取消请求已提交。");
+  } catch (error) {
+    showToast(error.message || "取消任务失败");
+  }
+}
+
+function loadTaskResult(task) {
+  if (!task?.result) {
+    return;
+  }
+  rememberRunDetail(task.result);
+  if (task.kind === "ui_run") {
+    uiRunResult.value = task.result;
+    window.location.hash = "#uiRunnerTitle";
+    fetchUiRunHistory();
+  } else {
+    apiRunResult.value = task.result;
+    window.location.hash = "#apiRunnerTitle";
+    fetchApiRunHistory();
+  }
+  syncDefectCandidates();
+  showToast("已载入后台任务结果。");
+}
+
+function upsertTask(task) {
+  if (!task?.id) {
+    return;
+  }
+  const others = taskItems.value.filter((item) => item.id !== task.id);
+  taskItems.value = [task, ...others].slice(0, 20);
+}
+
+function canCancelTask(task) {
+  return ["pending", "running"].includes(task?.status);
+}
+
+function taskKindLabel(kind) {
+  const labels = {
+    api_run: "单接口",
+    api_suite: "用例集",
+    api_load: "并发",
+    ui_run: "UI",
+  };
+  return labels[kind] || "任务";
+}
+
+function taskStatusLabel(status) {
+  const labels = {
+    pending: "排队中",
+    running: "执行中",
+    success: "成功",
+    failed: "失败",
+    cancelled: "已取消",
+  };
+  return labels[status] || "未知";
+}
+
+function startTaskPolling() {
+  if (taskPollTimer.value) {
+    return;
+  }
+  taskPollTimer.value = window.setInterval(() => {
+    if (isAuthenticated.value) {
+      fetchTaskCenter();
+    }
+  }, 5000);
+}
+
+function stopTaskPolling() {
+  if (taskPollTimer.value) {
+    window.clearInterval(taskPollTimer.value);
+    taskPollTimer.value = null;
   }
 }
 

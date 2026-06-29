@@ -10,6 +10,7 @@
 - `frontend`：Vue 3 前端，经 Nginx 托管，对外端口默认 `5173`。
 - `backend`：FastAPI 后端，对外端口默认 `8000`。
 - `mysql`：MySQL 8 数据库，宿主机端口默认 `3307`，容器内部端口 `3306`。
+- `redis`：Redis 缓存和任务队列，宿主机端口默认 `6379`，容器内部端口 `6379`。
 
 前端容器会把 `/api`、`/docs` 和 `/openapi.json` 代理到后端容器，因此浏览器访问前端地址即可完成页面操作和后端 API 调用。
 
@@ -47,6 +48,7 @@ docker compose up --build
 后端：http://127.0.0.1:8000
 后端文档：http://127.0.0.1:8000/docs
 MySQL：127.0.0.1:3307
+Redis：127.0.0.1:6379
 ```
 
 ## 4. 后台启动和停止
@@ -93,9 +95,12 @@ Copy-Item .env.docker.example .env.docker
 DOCKER_FRONTEND_PORT=5173
 DOCKER_BACKEND_PORT=8000
 DOCKER_MYSQL_PORT=3307
+DOCKER_REDIS_PORT=6379
 DOCKER_MYSQL_DATABASE=ai_testcase
 DOCKER_MYSQL_USER=ai_test_user
 DOCKER_MYSQL_PASSWORD=ai_test_password
+REDIS_ENABLED=true
+REDIS_URL=redis://redis:6379/0
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini

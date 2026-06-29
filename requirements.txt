@@ -1,4 +1,4 @@
-# 这个文件负责声明后端 FastAPI 服务运行所需的 Python 依赖。
+# Backend runtime dependencies for the FastAPI service.
 fastapi
 uvicorn[standard]
 python-multipart
@@ -12,3 +12,4 @@ SQLAlchemy
 PyMySQL
 PyYAML
 playwright
+redis
