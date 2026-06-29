@@ -1,0 +1,71 @@
+name: ai-testcase-platform-prod
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ai-test-prod-mysql
+    restart: unless-stopped
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DOCKER_MYSQL_ROOT_PASSWORD:-ai_test_root}
+      MYSQL_DATABASE: ${DOCKER_MYSQL_DATABASE:-ai_testcase}
+      MYSQL_USER: ${DOCKER_MYSQL_USER:-ai_test_user}
+      MYSQL_PASSWORD: ${DOCKER_MYSQL_PASSWORD:-ai_test_password}
+    volumes:
+      - ai-test-prod-mysql-data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}:${IMAGE_TAG:-latest}
+    container_name: ai-test-prod-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_ENABLED: "true"
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: ${DOCKER_MYSQL_USER:-ai_test_user}
+      MYSQL_PASSWORD: ${DOCKER_MYSQL_PASSWORD:-ai_test_password}
+      MYSQL_DATABASE: ${DOCKER_MYSQL_DATABASE:-ai_testcase}
+      MYSQL_CHARSET: utf8mb4
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-5000}
+      API_RUNNER_ALLOW_LOCALHOST: ${API_RUNNER_ALLOW_LOCALHOST:-false}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-ai-testcase-prod-change-me}
+      AUTH_TOKEN_EXPIRE_MINUTES: ${AUTH_TOKEN_EXPIRE_MINUTES:-1440}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      APP_ADMIN_USERNAME: ${APP_ADMIN_USERNAME:-admin}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-Admin@123456}
+      APP_ADMIN_DISPLAY_NAME: ${APP_ADMIN_DISPLAY_NAME:-管理员}
+    ports:
+      - "${DOCKER_BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ai-test-prod-generated:/app/generated
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}:${IMAGE_TAG:-latest}
+    container_name: ai-test-prod-frontend
+    restart: unless-stopped
+    ports:
+      - "${DOCKER_FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  ai-test-prod-mysql-data:
+  ai-test-prod-generated:

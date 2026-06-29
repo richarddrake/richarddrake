@@ -141,9 +141,9 @@
 
 ### 5.11 GitHub Actions CI/CD
 
-当前版本补充 GitHub Actions 基础 CI/CD 流程。代码推送到 `main` 分支或提交 pull request 时，CI 会自动执行后端 Python 编译检查、前端 Vue 构建、Docker Compose 配置校验，以及前后端 Docker 镜像构建检查。
+当前版本补充 GitHub Actions CI/CD 流程。代码推送到 `main` 分支或提交 pull request 时，CI 会自动执行后端 Python 编译检查、前端 Vue 构建、Docker Compose 配置校验，以及前后端 Docker 镜像构建检查。
 
-在 `main` 分支 push 场景下，工作流还会使用 GitHub Token 登录 GitHub Container Registry，并将后端和前端镜像分别发布为 `latest` 与 `sha-xxxxxxx` 两类标签。该能力用于在代码合并前发现语法错误、前端构建错误和容器化配置问题，并沉淀可部署镜像。当前阶段 CD 只负责镜像发布，不自动 SSH 部署服务器；后续可在此基础上扩展服务器自动拉取镜像和 `docker compose up -d`。
+在 `main` 分支 push 场景下，工作流还会使用 GitHub Token 登录 GitHub Container Registry，并将后端和前端镜像分别发布为 `latest` 与 `sha-xxxxxxx` 两类标签。若仓库配置了服务器 SSH secrets，CD 会继续上传生产 Compose 文件和部署脚本到服务器，拉取本次提交对应的镜像标签，并通过 `docker compose up -d` 完成自动更新。该能力用于在代码合并前发现语法错误、前端构建错误和容器化配置问题，并把“构建产物”推进到可部署运行环境。
 
 ## 6. 核心功能模块
 
@@ -409,7 +409,7 @@
 | 登录与权限管理 | 已实现基础版 | 中 | 支持默认管理员、账号密码登录、HttpOnly Cookie 会话、用户创建、启停和基础角色权限 |
 | 历史记录 / MySQL | 已实现 | 中高 | 支持保存生成历史、执行历史和结果回查 |
 | Docker Compose 演示环境 | 已实现基础版 | 中 | 支持 Vue 前端、FastAPI 后端和 MySQL 一键启动，前端 Nginx 代理后端 API |
-| GitHub Actions CI/CD | 已实现基础版 | 中 | 支持后端编译、前端构建、Compose 校验、Docker 镜像构建检查和 GHCR 镜像发布 |
+| GitHub Actions CI/CD | 已实现进阶版 | 中高 | 支持后端编译、前端构建、Compose 校验、Docker 镜像构建检查、GHCR 镜像发布和 SSH 自动部署 |
 | 环境管理 | 规划中 | 低 | 尚未形成独立的 dev/test/pre/prod 配置体系 |
 | 测试数据管理 | 规划中 | 低 | 尚未形成统一数据池、账号池和清理策略 |
 
