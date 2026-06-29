@@ -813,11 +813,11 @@
               </div>
               <div class="field-group compact-field">
                 <label for="apiRepeat">并发次数</label>
-                <input id="apiRepeat" v-model.number="apiTest.repeat" class="number-input" type="number" min="1" max="100" />
+                <input id="apiRepeat" v-model.number="apiTest.repeat" class="number-input" type="number" min="1" :max="MAX_API_LOAD_REPEAT" />
               </div>
               <div class="field-group compact-field">
                 <label for="apiConcurrency">并发数</label>
-                <input id="apiConcurrency" v-model.number="apiTest.concurrency" class="number-input" type="number" min="1" max="20" />
+                <input id="apiConcurrency" v-model.number="apiTest.concurrency" class="number-input" type="number" min="1" :max="MAX_API_LOAD_CONCURRENCY" />
               </div>
             </div>
 
@@ -1396,6 +1396,8 @@ import {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const MAX_CLIENT_FILE_MB = 20;
+const MAX_API_LOAD_REPEAT = 100;
+const MAX_API_LOAD_CONCURRENCY = 200;
 const DEFECT_STORAGE_KEY = "ai-test-defect-tracker-v1";
 const apiMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const SUPPORTED_EXTENSIONS = new Set([
@@ -2302,6 +2304,12 @@ async function runApiLoad() {
     return;
   }
 
+  const loadSettings = normalizeLoadSettings();
+  if (!loadSettings.valid) {
+    showToast(loadSettings.message);
+    return;
+  }
+
   isApiRunning.value = true;
   apiRunResult.value = null;
   try {
@@ -2312,8 +2320,8 @@ async function runApiLoad() {
       },
       body: JSON.stringify({
         ...payload,
-        repeat: Number(apiTest.value.repeat) || 10,
-        concurrency: Number(apiTest.value.concurrency) || 3,
+        repeat: loadSettings.repeat,
+        concurrency: loadSettings.concurrency,
       }),
     });
     if (!response.ok) {
@@ -2329,6 +2337,28 @@ async function runApiLoad() {
   } finally {
     isApiRunning.value = false;
   }
+}
+
+function normalizeLoadSettings() {
+  const repeat = Number(apiTest.value.repeat) || 10;
+  const concurrency = Number(apiTest.value.concurrency) || 3;
+  if (!Number.isInteger(repeat) || repeat < 1 || repeat > MAX_API_LOAD_REPEAT) {
+    return {
+      valid: false,
+      message: `并发次数需要在 1-${MAX_API_LOAD_REPEAT} 之间。`,
+    };
+  }
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_API_LOAD_CONCURRENCY) {
+    return {
+      valid: false,
+      message: `并发数需要在 1-${MAX_API_LOAD_CONCURRENCY} 之间。`,
+    };
+  }
+  return {
+    valid: true,
+    repeat,
+    concurrency,
+  };
 }
 
 async function fetchApiRunHistory() {

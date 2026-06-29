@@ -19,7 +19,7 @@ from app.auth.dependencies import require_login
 from app.auth.router import router as auth_router
 from app.auth.service import init_auth_system
 from app.schemas import UploadedMaterial, normalize_case
-from app.services.api_runner import run_api_load_test, run_api_test, run_api_test_suite
+from app.services.api_runner import MAX_LOAD_CONCURRENCY, MAX_LOAD_REPEAT, run_api_load_test, run_api_test, run_api_test_suite
 from app.services.case_quality import build_coverage_report, enrich_case_dict, enrich_cases
 from app.services.case_review import build_case_review
 from app.services.database import (
@@ -93,8 +93,8 @@ class ApiTestSuiteRequest(BaseModel):
 
 
 class ApiLoadTestRequest(ApiTestRunRequest):
-    repeat: int = Field(default=10, ge=1, le=100)
-    concurrency: int = Field(default=3, ge=1, le=20)
+    repeat: int = Field(default=10, ge=1, le=MAX_LOAD_REPEAT)
+    concurrency: int = Field(default=3, ge=1, le=MAX_LOAD_CONCURRENCY)
 
 
 class GeneratedCaseExecuteRequest(BaseModel):
