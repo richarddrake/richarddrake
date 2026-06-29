@@ -10,6 +10,7 @@ app/                       FastAPI 后端 API，默认运行在 127.0.0.1:8000
 generated/                 运行时生成的 Excel 文件
 docs/                      配置与输入材料说明
 docker/                    Docker Compose 演示环境初始化配置
+.github/workflows/         GitHub Actions CI 检查流程
 scripts/                   Windows 启动和端口释放脚本
 ```
 
@@ -71,6 +72,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 支持 Playwright Web UI 自动化基础执行：受控步骤 DSL、Chromium/Firefox/WebKit、页面断言、失败截图、trace 证据、UI 执行历史和报告中心汇总
 - 支持账号密码登录、HttpOnly Cookie 会话、管理员用户管理、测试人员权限和登录审计
 - 支持 Docker Compose 一键启动 Vue 前端、FastAPI 后端和 MySQL，便于演示和搭建可复现测试环境
+- 支持 GitHub Actions CI，在 push 和 pull request 时自动执行后端编译、前端构建、Compose 配置校验和 Docker 镜像构建检查
 
 ## 测试报告能力
 
