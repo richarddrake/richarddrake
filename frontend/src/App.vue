@@ -937,6 +937,17 @@
                   <ul v-if="apiRunResult.failureAnalysis.evidence?.length" class="failure-evidence-list">
                     <li v-for="item in apiRunResult.failureAnalysis.evidence.slice(0, 3)" :key="item">{{ item }}</li>
                   </ul>
+                  <div class="failure-analysis-actions">
+                    <span>{{ analysisStorageLabel(apiRunResult) }}</span>
+                    <button class="secondary-button compact-button" type="button" @click="downloadFailureAnalysis(apiRunResult, 'md')">
+                      <Download aria-hidden="true" />
+                      Markdown
+                    </button>
+                    <button class="secondary-button compact-button" type="button" @click="downloadFailureAnalysis(apiRunResult, 'json')">
+                      <Download aria-hidden="true" />
+                      JSON
+                    </button>
+                  </div>
                 </div>
 
                 <pre class="response-preview">{{ apiRunResult.response?.bodyPreview || apiRunResult.error || "无响应体" }}</pre>
@@ -2580,6 +2591,142 @@ function downloadHistoryExcel(url) {
   if (url) {
     window.location.href = apiUrl(url);
   }
+}
+
+function downloadFailureAnalysis(run, format = "md") {
+  if (!run?.failureAnalysis) {
+    showToast("当前执行结果没有可下载的智能分析。");
+    return;
+  }
+  const payload = buildFailureAnalysisPayload(run);
+  const isJson = format === "json";
+  const content = isJson ? JSON.stringify(payload, null, 2) : createFailureAnalysisMarkdown(payload);
+  const extension = isJson ? "json" : "md";
+  const mimeType = isJson ? "application/json;charset=utf-8" : "text/markdown;charset=utf-8";
+  const filename = `failure-analysis-${safeFilePart(payload.runId || payload.name || "api-run")}.${extension}`;
+  downloadTextFile(content, filename, mimeType);
+}
+
+function buildFailureAnalysisPayload(run) {
+  const failedAssertions = (run.assertions || [])
+    .filter((item) => item && item.passed === false)
+    .map((item) => ({
+      name: item.name || "",
+      category: item.category || "",
+      message: item.message || "",
+      actual: item.actual ?? "",
+      expected: item.expected ?? "",
+      operator: item.operator || "",
+    }));
+
+  return {
+    runId: run.runId || "",
+    name: run.name || "",
+    runType: run.runType || "single",
+    createdAt: run.createdAt || new Date().toISOString(),
+    passed: Boolean(run.passed),
+    request: {
+      method: run.request?.method || "",
+      url: run.request?.url || "",
+    },
+    response: {
+      statusCode: run.response?.statusCode ?? null,
+      durationMs: run.response?.durationMs ?? 0,
+      bodyPreview: run.response?.bodyPreview || "",
+    },
+    assertionSummary: run.summary || {
+      assertionCount: run.assertions?.length || 0,
+      passedAssertions: passedAssertionCount(run),
+      failedAssertions: failedAssertions.length,
+    },
+    failureAnalysis: run.failureAnalysis,
+    failedAssertions,
+  };
+}
+
+function createFailureAnalysisMarkdown(payload) {
+  const analysis = payload.failureAnalysis || {};
+  const confidence = Math.round((analysis.confidence || 0) * 100);
+  const lines = [
+    "# 接口智能分析报告",
+    "",
+    `- 执行 ID：${payload.runId || "-"}`,
+    `- 接口名称：${payload.name || "-"}`,
+    `- 执行时间：${formatDate(payload.createdAt)}`,
+    `- 请求：${payload.request.method || "-"} ${payload.request.url || "-"}`,
+    `- HTTP 状态码：${payload.response.statusCode ?? "-"}`,
+    `- 耗时：${payload.response.durationMs ?? 0} ms`,
+    `- 执行结果：${payload.passed ? "通过" : "未通过"}`,
+    `- 断言：${payload.assertionSummary.passedAssertions ?? 0}/${payload.assertionSummary.assertionCount ?? 0}`,
+    "",
+    "## 分析结论",
+    "",
+    `- 分类：${analysis.category || "-"}`,
+    `- 置信度：${confidence}%`,
+    `- 摘要：${analysis.summary || "-"}`,
+    `- 缺陷跟踪建议：${analysis.shouldCreateDefect ? "建议纳入缺陷跟踪" : "建议先继续排查"}`,
+    `- 用例更新建议：${analysis.shouldUpdateCase ? "建议更新断言或用例配置" : "暂不建议直接更新用例"}`,
+    "",
+    "## 排查建议",
+    "",
+    ...markdownList(analysis.nextSteps),
+    "",
+    "## 证据",
+    "",
+    ...markdownList(analysis.evidence),
+    "",
+    "## 失败断言",
+    "",
+    ...(payload.failedAssertions.length
+      ? payload.failedAssertions.map(
+          (item) =>
+            `- ${item.name || "断言"}：${item.message || "-"}；实际：${stringifyValue(item.actual) || "-"}；期望：${stringifyValue(item.expected) || "-"}；操作符：${item.operator || "-"}`,
+        )
+      : ["- 当前没有失败断言明细"]),
+    "",
+    "## 响应摘要",
+    "",
+    payload.response.bodyPreview ? "```text" : "",
+    payload.response.bodyPreview || "- 当前没有响应摘要",
+    payload.response.bodyPreview ? "```" : "",
+  ];
+  return lines.join("\n");
+}
+
+function analysisStorageLabel(run) {
+  const status = run?.historyStatus;
+  if (status === "saved") {
+    return "分析已纳入执行历史";
+  }
+  if (status === "disabled") {
+    return "MySQL 未启用，当前仅可下载归档";
+  }
+  if (status === "failed" || status === "unavailable") {
+    return "历史保存暂不可用，建议先下载归档";
+  }
+  return "可下载归档";
+}
+
+function markdownList(items) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  return list.length ? list.map((item) => `- ${item}`) : ["- 暂无"];
+}
+
+function downloadTextFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function safeFilePart(value) {
+  return String(value || "report")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .slice(0, 80);
 }
 
 function showToast(message) {

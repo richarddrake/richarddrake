@@ -1308,6 +1308,29 @@ input[type="search"]:focus,
   margin: 2px 0;
 }
 
+.failure-analysis-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.failure-analysis-actions span {
+  margin-right: auto;
+}
+
+.compact-button {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.compact-button svg {
+  width: 14px;
+  height: 14px;
+}
+
 .failure-evidence-list {
   margin: 2px 0 0;
   padding-left: 18px;

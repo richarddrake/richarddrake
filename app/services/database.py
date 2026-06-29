@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine, text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine, inspect, text
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -108,6 +108,7 @@ class ApiTestRun(Base):
     response_headers_json = Column(JsonText, nullable=False, default="{}")
     response_body_preview = Column(JsonText, nullable=False, default="")
     assertions_json = Column(JsonText, nullable=False, default="[]")
+    failure_analysis_json = Column(JsonText, nullable=False, default="{}")
 
 
 class UiTestRun(Base):
@@ -179,6 +180,7 @@ def init_database() -> bool:
 
     try:
         Base.metadata.create_all(bind=_engine)
+        _ensure_runtime_columns(_engine)
         _last_error = ""
         return True
     except SQLAlchemyError as exc:
@@ -205,11 +207,22 @@ def init_auth_store() -> bool:
 
     try:
         Base.metadata.create_all(bind=_auth_engine)
+        _ensure_runtime_columns(_auth_engine)
         _auth_last_error = ""
         return True
     except SQLAlchemyError as exc:
         _auth_last_error = str(exc)
         return False
+
+
+def _ensure_runtime_columns(engine: Any) -> None:
+    inspector = inspect(engine)
+    if "api_test_runs" in inspector.get_table_names():
+        api_columns = {item["name"] for item in inspector.get_columns("api_test_runs")}
+        if "failure_analysis_json" not in api_columns:
+            column_type = "LONGTEXT" if engine.dialect.name == "mysql" else "TEXT"
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE api_test_runs ADD COLUMN failure_analysis_json {column_type}"))
 
 
 def get_auth_store_status() -> dict[str, Any]:
@@ -611,6 +624,7 @@ def record_api_test_run(result: dict[str, Any]) -> str:
                     response_headers_json=_json_dumps(response.get("headers") or {}),
                     response_body_preview=str(response.get("bodyPreview") or ""),
                     assertions_json=_json_dumps(result.get("assertions") or []),
+                    failure_analysis_json=_json_dumps(result.get("failureAnalysis") or {}),
                 )
             )
             db.commit()
@@ -800,6 +814,7 @@ def _case_to_dict(case: StoredTestCase) -> dict[str, Any]:
 def _api_run_to_dict(run: ApiTestRun) -> dict[str, Any]:
     run_type = {"SUITE": "suite", "LOAD": "load"}.get((run.method or "").upper(), "single")
     assertions = _load_json(run.assertions_json, [])
+    failure_analysis = _load_json(run.failure_analysis_json, {})
     return {
         "runId": run.run_id,
         "createdAt": run.created_at.isoformat() + "Z" if run.created_at else "",
@@ -822,6 +837,7 @@ def _api_run_to_dict(run: ApiTestRun) -> dict[str, Any]:
             "bodyPreview": run.response_body_preview,
         },
         "assertions": assertions,
+        "failureAnalysis": failure_analysis or None,
         "summary": {
             "assertionCount": len(assertions),
             "passedAssertions": sum(1 for item in assertions if item.get("passed")),

@@ -66,6 +66,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 支持用例质量评分：步骤可执行性、预期可验证性、测试数据、覆盖标签、自动化就绪和重复度
 - 支持接口失败分析 Agent，自动归类环境、鉴权、参数、断言、契约变更、后端缺陷和数据库一致性问题
 - 支持失败分析证据链、置信度、是否建议创建缺陷和是否建议更新用例
+- 支持接口失败分析随执行历史持久化，并可下载 Markdown / JSON 分析报告用于归档和汇报
 - 支持请求/响应敏感 Header 脱敏，并支持按环境变量启用更严格的内网访问限制
 - 支持 Playwright Web UI 自动化基础执行：受控步骤 DSL、Chromium/Firefox/WebKit、页面断言、失败截图、trace 证据、UI 执行历史和报告中心汇总
 - 支持账号密码登录、HttpOnly Cookie 会话、管理员用户管理、测试人员权限和登录审计
@@ -354,7 +355,7 @@ POST /api/openapi/import
 POST /api/coverage/analyze
 ```
 
-执行结果会返回通过状态、实际状态码、耗时、响应预览、断言明细、变量提取结果、数据库校验结果和并发指标；如果 MySQL 已启用，会自动写入 `api_test_runs` 表。
+执行结果会返回通过状态、实际状态码、耗时、响应预览、断言明细、变量提取结果、数据库校验结果、失败分析和并发指标；如果 MySQL 已启用，会自动写入 `api_test_runs` 表，并保留失败分析结论、证据和排查建议。
 
 详细配置示例见：[docs/API_TEST_EXECUTION.md](docs/API_TEST_EXECUTION.md)
 
