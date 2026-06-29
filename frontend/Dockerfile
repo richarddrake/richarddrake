@@ -1,5 +1,5 @@
 # 这个 Dockerfile 负责构建 Vue 前端静态资源，并通过 Nginx 托管页面与代理后端 API。
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 

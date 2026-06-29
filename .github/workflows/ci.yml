@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -12,6 +12,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   backend:
     name: Backend
@@ -19,10 +23,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -41,12 +45,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -67,7 +71,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate Docker Compose
         run: docker compose -f docker-compose.yml config --quiet
@@ -77,3 +81,38 @@ jobs:
 
       - name: Build frontend image
         run: docker compose -f docker-compose.yml build frontend
+
+      - name: Prepare image names
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          repo="${repo,,}"
+          short_sha="${GITHUB_SHA::7}"
+          echo "BACKEND_IMAGE=ghcr.io/${owner}/${repo}-backend" >> "$GITHUB_ENV"
+          echo "FRONTEND_IMAGE=ghcr.io/${owner}/${repo}-frontend" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${short_sha}" >> "$GITHUB_ENV"
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build release images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker build -f Dockerfile.backend \
+            -t "$BACKEND_IMAGE:latest" \
+            -t "$BACKEND_IMAGE:sha-$SHORT_SHA" \
+            .
+          docker build -f frontend/Dockerfile \
+            -t "$FRONTEND_IMAGE:latest" \
+            -t "$FRONTEND_IMAGE:sha-$SHORT_SHA" \
+            ./frontend
+
+      - name: Push release images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker push "$BACKEND_IMAGE:latest"
+          docker push "$BACKEND_IMAGE:sha-$SHORT_SHA"
+          docker push "$FRONTEND_IMAGE:latest"
+          docker push "$FRONTEND_IMAGE:sha-$SHORT_SHA"
