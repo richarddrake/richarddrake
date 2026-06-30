@@ -290,7 +290,7 @@ def _focus_terms(text: str) -> list[str]:
                 term = phrase[index : index + size]
                 if term not in stop_words:
                     terms.add(term)
-    return sorted(terms, key=len, reverse=True)[:24]
+    return sorted(terms, key=lambda item: (-len(item), item))[:80]
 
 
 def _doc_collection_prefix(path: str) -> str:

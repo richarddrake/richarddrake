@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
@@ -19,6 +20,18 @@ load_dotenv()
 class GenerationEvent:
     kind: str
     payload: dict[str, Any]
+
+
+@dataclass
+class ApiDocEndpoint:
+    title: str
+    method: str
+    path: str
+    source_url: str
+    description: str
+    request_sample: dict[str, Any]
+    params: list[str]
+    content: str
 
 
 async def generate_test_cases(
@@ -252,12 +265,416 @@ async def _generate_demo(
         await asyncio.sleep(0.12)
         yield GenerationEvent("thought", {"text": thought})
 
+    doc_cases = _cases_from_api_docs(requirements, context, material_context)
+    if doc_cases:
+        yield GenerationEvent(
+            "thought",
+            {
+                "text": (
+                    f"本地生成器已从接口文档正文识别到 {len({case['module'] for case in doc_cases})} 个接口模块，"
+                    "将基于真实请求路径、方法、参数和返回示例生成可执行接口用例。"
+                )
+            },
+        )
+        for index, case in enumerate(doc_cases, 1):
+            await asyncio.sleep(0.06)
+            case["id"] = f"TC-{index:03d}"
+            yield GenerationEvent("case", case)
+        return
+
     cases = _demo_cases()
     for index, case in enumerate(cases, 1):
         await asyncio.sleep(0.06)
         case["id"] = f"TC-{index:03d}"
         case = _with_demo_api_test(case, index)
         yield GenerationEvent("case", case)
+
+
+def _cases_from_api_docs(requirements: str, context: str, material_context: str) -> list[dict[str, Any]]:
+    endpoints = _extract_api_doc_endpoints(material_context)
+    if not endpoints:
+        return []
+
+    focus = f"{requirements}\n{context}".strip()
+    ranked = sorted(endpoints, key=lambda item: _endpoint_score(item, focus), reverse=True)
+    selected = ranked[:3]
+    cases: list[dict[str, Any]] = []
+    for endpoint in selected:
+        cases.extend(_endpoint_cases(endpoint))
+    return cases[:18]
+
+
+def _extract_api_doc_endpoints(material_context: str) -> list[ApiDocEndpoint]:
+    if "请求URL" not in material_context or "请求方式" not in material_context:
+        return []
+
+    lines = [_clean_doc_cell(line) for line in material_context.splitlines()]
+    endpoints: list[ApiDocEndpoint] = []
+    seen: set[tuple[str, str]] = set()
+    for index, line in enumerate(lines):
+        if line != "请求URL":
+            continue
+        path = _next_doc_value(lines, index)
+        method_index = _find_next_line(lines, "请求方式", index + 1, index + 20)
+        method = _next_doc_value(lines, method_index).upper() if method_index >= 0 else ""
+        if not path or not method:
+            continue
+        if not re.match(r"^[A-Z]+$", method):
+            continue
+        key = (method, path)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        start = max(0, index - 90)
+        end = min(len(lines), index + 180)
+        chunk = "\n".join(lines[start:end])
+        title = _nearest_doc_title(lines, index) or path
+        if " - " in title:
+            title = title.split(" - ", 1)[0].strip()
+        description_index = _find_previous_line(lines, "简要描述", index, index - 40)
+        description = _next_doc_value(lines, description_index) if description_index >= 0 else title
+        request_sample = _extract_request_sample(chunk)
+        params = _extract_request_params(chunk, request_sample)
+        endpoints.append(
+            ApiDocEndpoint(
+                title=title or description or path,
+                method=method,
+                path=path,
+                source_url=_nearest_source_url(lines, index),
+                description=description,
+                request_sample=request_sample,
+                params=params,
+                content=chunk,
+            )
+        )
+    return endpoints
+
+
+def _endpoint_cases(endpoint: ApiDocEndpoint) -> list[dict[str, Any]]:
+    module = endpoint.title or endpoint.path
+    source = f"网页接口文档：{endpoint.source_url or endpoint.path}"
+    business_params = [item for item in endpoint.params if item not in {"application", "application_client_type", "token", "ajax"}]
+    primary_param = _pick_primary_param(business_params, endpoint.request_sample)
+    sample_payload = endpoint.request_sample or _sample_payload_from_params(business_params)
+    invalid_payload = dict(sample_payload)
+    if primary_param:
+        invalid_payload[primary_param] = "invalid"
+    missing_payload = dict(sample_payload)
+    if primary_param:
+        missing_payload.pop(primary_param, None)
+
+    cases = [
+        _api_doc_case(
+            endpoint,
+            title=f"{module}接口正向请求成功",
+            priority="P0",
+            case_type="接口",
+            scenario=f"使用文档示例参数调用 {endpoint.method} {endpoint.path}",
+            preconditions=["ShopXO API 服务已启动", "已准备有效业务数据", "如接口需要登录则已准备有效 token"],
+            steps=["设置 base_url、application、application_client_type 和 token 变量", "按文档示例参数发送请求", "校验响应状态码和业务 code"],
+            expected_results=["HTTP 状态码为 200", "响应 JSON 中 code 为 0", "返回 msg 字段和业务 data 字段"],
+            test_data=sample_payload,
+            tags=["接口", "正向", "网页文档"],
+            source=source,
+            body=sample_payload,
+            assertions=_positive_assertions(),
+            expected_contains="code",
+        ),
+        _api_doc_case(
+            endpoint,
+            title=f"{module}接口缺少必填参数时返回失败",
+            priority="P0",
+            case_type="异常",
+            scenario=f"覆盖 {primary_param or '必填参数'} 缺失后的参数校验",
+            preconditions=["ShopXO API 服务已启动", "接口文档已声明请求参数"],
+            steps=[f"移除请求参数 {primary_param or '必填字段'}", "发送接口请求", "校验失败响应"],
+            expected_results=["HTTP 状态码为 200 或接口约定错误状态", "响应 JSON 中 code 不为 0", "错误提示能够说明参数缺失或请求失败"],
+            test_data=missing_payload,
+            tags=["接口", "缺参", "异常"],
+            source=source,
+            body=missing_payload,
+            assertions=_negative_assertions(),
+            expected_contains="code",
+        ),
+        _api_doc_case(
+            endpoint,
+            title=f"{module}接口参数类型非法时返回失败",
+            priority="P1",
+            case_type="异常",
+            scenario=f"覆盖 {primary_param or '业务参数'} 类型非法或格式错误",
+            preconditions=["ShopXO API 服务已启动"],
+            steps=[f"将 {primary_param or '业务参数'} 设置为非法字符串", "发送接口请求", "校验接口未按成功处理"],
+            expected_results=["HTTP 状态码为 200 或接口约定错误状态", "响应 JSON 中 code 不为 0", "不会产生成功业务数据"],
+            test_data=invalid_payload,
+            tags=["接口", "非法参数"],
+            source=source,
+            body=invalid_payload,
+            assertions=_negative_assertions(),
+            expected_contains="code",
+        ),
+        _api_doc_case(
+            endpoint,
+            title=f"{module}接口无效 token 场景校验",
+            priority="P0",
+            case_type="权限",
+            scenario="覆盖登录态缺失、token 过期或 token 非法",
+            preconditions=["ShopXO API 服务已启动", "接口存在用户态或订单态数据"],
+            steps=["将 token 变量设置为空或无效值", "发送接口请求", "校验鉴权失败或业务拒绝"],
+            expected_results=["接口不应按已登录用户成功处理", "响应 JSON 中 code 不为 0 或返回明确鉴权提示"],
+            test_data=sample_payload,
+            tags=["接口", "权限", "token"],
+            source=source,
+            body=sample_payload,
+            variables={"token": "invalid-token"},
+            assertions=_negative_assertions(),
+            expected_contains="code",
+        ),
+        _api_doc_case(
+            endpoint,
+            title=f"{module}接口重复提交幂等性校验",
+            priority="P1",
+            case_type="幂等",
+            scenario="覆盖短时间重复调用同一业务请求",
+            preconditions=["ShopXO API 服务已启动", "准备一组可重复验证的业务数据"],
+            steps=["使用相同参数连续发送两次请求", "分别记录两次响应", "核对业务状态是否重复变更"],
+            expected_results=["接口不产生重复扣减、重复支付或重复业务记录", "第二次请求返回明确状态或保持幂等结果"],
+            test_data=sample_payload,
+            tags=["接口", "重复提交", "数据一致性"],
+            source=source,
+            body=sample_payload,
+            assertions=[{"name": "响应业务码存在", "source": "json", "path": "$.code", "operator": "exists"}],
+            expected_contains="code",
+        ),
+        _api_doc_case(
+            endpoint,
+            title=f"{module}接口响应契约字段校验",
+            priority="P1",
+            case_type="契约",
+            scenario="覆盖文档返回示例中的基础字段结构",
+            preconditions=["ShopXO API 服务已启动"],
+            steps=["按文档示例参数发送请求", "检查响应 JSON 结构", "校验 code、msg、data 字段存在"],
+            expected_results=["响应为 JSON 对象", "code、msg、data 字段存在", "字段类型与接口文档示例一致"],
+            test_data=sample_payload,
+            tags=["接口", "响应契约", "JSON"],
+            source=source,
+            body=sample_payload,
+            assertions=[
+                {"name": "code 字段存在", "source": "json", "path": "$.code", "operator": "exists"},
+                {"name": "msg 字段存在", "source": "json", "path": "$.msg", "operator": "exists"},
+                {"name": "data 字段存在", "source": "json", "path": "$.data", "operator": "exists"},
+            ],
+            expected_contains="code",
+            json_schema={
+                "type": "object",
+                "required": ["code", "msg", "data"],
+                "properties": {
+                    "code": {"type": ["integer", "number", "string"]},
+                    "msg": {"type": "string"},
+                },
+            },
+        ),
+    ]
+    return cases
+
+
+def _api_doc_case(
+    endpoint: ApiDocEndpoint,
+    *,
+    title: str,
+    priority: str,
+    case_type: str,
+    scenario: str,
+    preconditions: list[str],
+    steps: list[str],
+    expected_results: list[str],
+    test_data: dict[str, Any],
+    tags: list[str],
+    source: str,
+    body: dict[str, Any],
+    assertions: list[dict[str, Any]],
+    expected_contains: str,
+    variables: dict[str, str] | None = None,
+    json_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    api_test = _api_test_for_endpoint(endpoint, body, assertions, expected_contains, variables, json_schema)
+    return {
+        "module": endpoint.title or endpoint.path,
+        "title": title,
+        "priority": priority,
+        "case_type": case_type,
+        "scenario": scenario,
+        "preconditions": preconditions,
+        "steps": steps,
+        "expected_results": expected_results,
+        "test_data": json.dumps(test_data, ensure_ascii=False),
+        "tags": tags,
+        "source": source,
+        "requirement_id": endpoint.path,
+        "api_test": api_test,
+    }
+
+
+def _api_test_for_endpoint(
+    endpoint: ApiDocEndpoint,
+    body: dict[str, Any],
+    assertions: list[dict[str, Any]],
+    expected_contains: str,
+    variables: dict[str, str] | None,
+    json_schema: dict[str, Any] | None,
+) -> dict[str, Any]:
+    common_variables = {
+        "base_url": "http://127.0.0.1:8080",
+        "application": "app",
+        "application_client_type": "weixin",
+        "token": "",
+        **(variables or {}),
+    }
+    query = "application={{application}}&application_client_type={{application_client_type}}&token={{token}}&ajax=ajax"
+    return {
+        "name": f"{endpoint.title or endpoint.path} - {endpoint.method} {endpoint.path}",
+        "method": endpoint.method,
+        "url": f"{{{{base_url}}}}/api.php?s={endpoint.path}&{query}",
+        "headers": {"Accept": "application/json"},
+        "body": json.dumps(body, ensure_ascii=False),
+        "bodyMode": "form" if endpoint.method in {"POST", "PUT", "PATCH"} else "raw",
+        "formFields": body if endpoint.method in {"POST", "PUT", "PATCH"} else {},
+        "expectedStatus": 200,
+        "expectedContains": expected_contains,
+        "timeoutSeconds": 10,
+        "maxResponseMs": 3000,
+        "variables": common_variables,
+        "assertions": assertions,
+        "extractors": [],
+        "databaseAssertions": [],
+        "jsonSchema": json_schema,
+    }
+
+
+def _positive_assertions() -> list[dict[str, Any]]:
+    return [
+        {"name": "HTTP 状态码为 200", "source": "status", "operator": "equals", "expected": 200},
+        {"name": "业务 code 为 0", "source": "json", "path": "$.code", "operator": "equals", "expected": 0},
+        {"name": "msg 字段存在", "source": "json", "path": "$.msg", "operator": "exists"},
+    ]
+
+
+def _negative_assertions() -> list[dict[str, Any]]:
+    return [
+        {"name": "HTTP 状态码为 200", "source": "status", "operator": "equals", "expected": 200},
+        {"name": "业务 code 不为 0", "source": "json", "path": "$.code", "operator": "not_equals", "expected": 0},
+        {"name": "msg 字段存在", "source": "json", "path": "$.msg", "operator": "exists"},
+    ]
+
+
+def _extract_request_sample(chunk: str) -> dict[str, Any]:
+    match = re.search(r"请求参数\s*(?:\||\n)\s*(\{.*?\})\s*(?:\||\n)\s*参数名", chunk, flags=re.S)
+    if not match:
+        return {}
+    snippet = match.group(1)
+    try:
+        parsed = json.loads(snippet)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _extract_request_params(chunk: str, sample: dict[str, Any]) -> list[str]:
+    params = list(sample.keys())
+    if "请求参数" not in chunk:
+        return params
+    area = chunk.split("请求参数", 1)[1].split("返回示例", 1)[0]
+    tokens: list[str] = []
+    for line in area.splitlines():
+        tokens.extend(_clean_doc_cell(item) for item in line.split("|"))
+    for index, token in enumerate(tokens):
+        if token == "参数名":
+            cursor = index + 5
+            while cursor < len(tokens):
+                name = tokens[cursor]
+                if not name or name in {"是否必须", "类型", "默认值", "描述"}:
+                    cursor += 1
+                    continue
+                if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name) and name not in params:
+                    params.append(name)
+                cursor += 5
+    return params
+
+
+def _sample_payload_from_params(params: list[str]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for param in params:
+        lower = param.lower()
+        if lower.endswith("_id") or lower == "id" or lower == "ids":
+            payload[param] = "1"
+        elif "stock" in lower or "num" in lower or "count" in lower:
+            payload[param] = "1"
+        else:
+            payload[param] = "test"
+    return payload
+
+
+def _pick_primary_param(params: list[str], sample: dict[str, Any]) -> str:
+    for candidate in ("ids", "id", "order_id", "goods_id", "payment_id"):
+        if candidate in sample or candidate in params:
+            return candidate
+    return params[0] if params else next(iter(sample), "")
+
+
+def _endpoint_score(endpoint: ApiDocEndpoint, focus: str) -> int:
+    text = f"{endpoint.title} {endpoint.description} {endpoint.path} {endpoint.content}".lower()
+    terms = set(re.findall(r"[A-Za-z0-9_/-]{3,}", focus.lower()))
+    for phrase in re.findall(r"[\u4e00-\u9fff]{2,}", focus.lower()):
+        terms.add(phrase)
+        for size in (2, 3, 4):
+            for index in range(0, max(0, len(phrase) - size + 1)):
+                terms.add(phrase[index : index + size])
+    return sum(1 for term in terms if term and term in text)
+
+
+def _clean_doc_cell(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _next_doc_value(lines: list[str], index: int) -> str:
+    if index < 0:
+        return ""
+    for line in lines[index + 1 : index + 8]:
+        value = _clean_doc_cell(line)
+        if value:
+            return value
+    return ""
+
+
+def _find_next_line(lines: list[str], target: str, start: int, end: int) -> int:
+    end = min(len(lines), end)
+    for index in range(max(0, start), end):
+        if lines[index] == target:
+            return index
+    return -1
+
+
+def _find_previous_line(lines: list[str], target: str, start: int, end: int) -> int:
+    for index in range(min(start, len(lines) - 1), max(-1, end), -1):
+        if lines[index] == target:
+            return index
+    return -1
+
+
+def _nearest_doc_title(lines: list[str], index: int) -> str:
+    for cursor in range(index, max(-1, index - 120), -1):
+        line = lines[cursor]
+        if line.startswith("【网页文档：") and line.endswith("】"):
+            return line.removeprefix("【网页文档：").removesuffix("】").strip()
+    return ""
+
+
+def _nearest_source_url(lines: list[str], index: int) -> str:
+    for cursor in range(index, max(-1, index - 120), -1):
+        line = lines[cursor]
+        if line.startswith("来源："):
+            return line.removeprefix("来源：").strip()
+    return ""
 
 
 def _with_demo_api_test(case: dict[str, Any], index: int) -> dict[str, Any]:
