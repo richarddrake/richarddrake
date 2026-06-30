@@ -22,6 +22,7 @@ TEXT_EXTENSIONS = {
     ".txt",
     ".md",
     ".markdown",
+    ".prd",
     ".json",
     ".yaml",
     ".yml",

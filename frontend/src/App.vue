@@ -210,7 +210,7 @@
             id="fileInput"
             class="sr-only"
             type="file"
-            accept="image/*,.xlsx,.xlsm,.xls,.csv,.tsv,.txt,.md,.markdown,.json,.yaml,.yml,.log,.feature,.html,.htm,.docx,.pdf"
+            accept="image/*,.xlsx,.xlsm,.xls,.csv,.tsv,.txt,.md,.markdown,.prd,.json,.yaml,.yml,.log,.feature,.html,.htm,.docx,.pdf"
             multiple
             @change="handleFileChange"
           />
@@ -226,14 +226,15 @@
             <span class="upload-icon" aria-hidden="true">
               <Upload />
             </span>
-            <span class="upload-title">上传图片、Excel、Word、PDF、CSV 或文本材料</span>
-            <span class="upload-subtitle">图片会作为视觉输入，文档和表格会先抽取文本</span>
+            <span class="upload-title">上传 PRD、图片、Excel、Word、PDF、CSV 或文本材料</span>
+            <span class="upload-subtitle">PRD、文档和表格会先抽取文本，图片会作为视觉输入</span>
           </label>
 
           <div class="material-hints" aria-label="支持的材料类型">
             <span>图片</span>
             <span>Excel/CSV</span>
             <span>Word/PDF</span>
+            <span>PRD</span>
             <span>TXT/MD/JSON</span>
             <span>飞书链接</span>
           </div>
@@ -306,6 +307,10 @@
               <button class="download-button" type="button" :disabled="!downloadUrl" @click="downloadExcel">
                 <Download aria-hidden="true" />
                 Excel
+              </button>
+              <button class="download-button" type="button" :disabled="!xmindDownloadUrl" @click="downloadXmind">
+                <Download aria-hidden="true" />
+                XMind
               </button>
             </div>
           </div>
@@ -1425,6 +1430,10 @@
                 <Download aria-hidden="true" />
                 Excel
               </button>
+              <button class="download-button" type="button" :disabled="!item.xmindDownloadUrl" @click="downloadHistoryXmind(item.xmindDownloadUrl)">
+                <Download aria-hidden="true" />
+                XMind
+              </button>
             </div>
           </article>
           <div v-if="!historyItems.length" class="empty-state history-empty">
@@ -1490,6 +1499,7 @@ const SUPPORTED_EXTENSIONS = new Set([
   "txt",
   "md",
   "markdown",
+  "prd",
   "json",
   "yaml",
   "yml",
@@ -1521,6 +1531,7 @@ const historyItems = ref([]);
 const apiRunHistory = ref([]);
 const uiRunHistory = ref([]);
 const downloadUrl = ref("");
+const xmindDownloadUrl = ref("");
 const activeView = ref("cards");
 const isGenerating = ref(false);
 const isDragging = ref(false);
@@ -1985,6 +1996,7 @@ function prepareGenerationState() {
   isGenerating.value = true;
   cases.value = [];
   downloadUrl.value = "";
+  xmindDownloadUrl.value = "";
   coverageReport.value = null;
   caseReviewReport.value = null;
   caseExecutionMap.value = {};
@@ -2068,6 +2080,7 @@ function handleEvent(eventName, data) {
 
   if (eventName === "done") {
     downloadUrl.value = data.downloadUrl;
+    xmindDownloadUrl.value = data.xmindDownloadUrl || "";
     coverageReport.value = data.coverageReport || coverageReport.value;
     statusText.value = `完成，已保存 ${data.count || cases.value.length} 条`;
     progress.value = 100;
@@ -2092,6 +2105,7 @@ function resetAll() {
   selectedFiles.value = [];
   cases.value = [];
   downloadUrl.value = "";
+  xmindDownloadUrl.value = "";
   coverageReport.value = null;
   caseReviewReport.value = null;
   caseExecutionMap.value = {};
@@ -2145,6 +2159,7 @@ async function importOpenApi() {
       caseCount: data.caseCount,
     };
     downloadUrl.value = data.downloadUrl || "";
+    xmindDownloadUrl.value = data.xmindDownloadUrl || "";
     statusText.value = `Swagger 已生成 ${cases.value.length} 条`;
     progress.value = 100;
     activeView.value = "cards";
@@ -2194,6 +2209,7 @@ function resetOpenApiImport() {
   openApiUrl.value = "";
   openApiBaseUrl.value = API_BASE_URL || "http://127.0.0.1:8000";
   openApiSummary.value = {};
+  xmindDownloadUrl.value = "";
 }
 
 async function fetchDatabaseStatus() {
@@ -2898,6 +2914,7 @@ async function loadHistoryDetail(sessionId) {
     streamMessages.value = [];
     coverageReport.value = await analyzeCurrentCoverage(cases.value);
     downloadUrl.value = detail.downloadUrl || "";
+    xmindDownloadUrl.value = detail.xmindDownloadUrl || "";
     statusText.value = `已加载历史 ${cases.value.length} 条`;
     progress.value = cases.value.length ? 100 : 0;
     activeView.value = "cards";
@@ -2913,7 +2930,19 @@ function downloadExcel() {
   }
 }
 
+function downloadXmind() {
+  if (xmindDownloadUrl.value) {
+    window.location.href = apiUrl(xmindDownloadUrl.value);
+  }
+}
+
 function downloadHistoryExcel(url) {
+  if (url) {
+    window.location.href = apiUrl(url);
+  }
+}
+
+function downloadHistoryXmind(url) {
   if (url) {
     window.location.href = apiUrl(url);
   }

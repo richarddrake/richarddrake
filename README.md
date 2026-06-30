@@ -1,13 +1,13 @@
 # 测试用例智能生成系统
 
-一个前后端分离的 AI 测试用例生成系统。用户可以上传思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、文本材料，也可以补充飞书文档/知识库/PRD 链接、用户要求和业务上下文。系统通过多模态大模型或本地演示生成器流式生成结构化测试用例，并自动保存为 Excel 文件供下载；同时支持接口测试执行、接口用例集串联、增强断言、数据库校验、并发执行和执行历史保存。
+一个前后端分离的 AI 测试用例生成系统。用户可以上传 PRD、思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、文本材料，也可以补充飞书文档/知识库/PRD 链接、用户要求和业务上下文。系统通过多模态大模型或本地演示生成器流式生成结构化测试用例，并自动保存为 Excel 和 XMind 思维导图文件供下载；同时支持接口测试执行、接口用例集串联、增强断言、数据库校验、并发执行和执行历史保存。
 
 ## 当前架构
 
 ```text
 frontend/                  Vue 3 + Vite 前端，默认运行在 127.0.0.1:5173
 app/                       FastAPI 后端 API，默认运行在 127.0.0.1:8000
-generated/                 运行时生成的 Excel 文件
+generated/                 运行时生成的 Excel 和 XMind 文件
 docs/                      配置与输入材料说明
 docker/                    Docker Compose 演示环境初始化配置
 .github/workflows/         GitHub Actions CI/CD 检查、镜像发布与服务器部署流程
@@ -17,7 +17,7 @@ scripts/                   Windows 启动和端口释放脚本
 前端和后端已经分离：
 
 - 前端页面由 `frontend/` 中的 Vue 应用实现。
-- 后端只提供 API、流式生成和 Excel 下载，不再托管静态页面。
+- 后端只提供 API、流式生成、Excel 下载和 XMind 下载，不再托管静态页面。
 - 开发环境下，Vite 会把 `/api` 请求代理到 `http://127.0.0.1:8000`。
 
 ## 文档入口
@@ -42,7 +42,7 @@ scripts/                   Windows 启动和端口释放脚本
 
 - 科技风 Vue 前端界面，包含左侧导航栏、工作台、用例生成、用例评审、Swagger 导入、接口执行、报告中心、缺陷跟踪和历史记录
 - 多源材料上传与预览
-- 支持图片、Excel、CSV、Word、PDF、Markdown、JSON、YAML、文本文件、飞书/网页链接
+- 支持 PRD、图片、Excel、CSV、Word、PDF、Markdown、JSON、YAML、文本文件、飞书/网页链接
 - 需求、上下文背景、外部文档链接输入
 - 自动识别链接类型，并提示飞书、Swagger UI、OpenAPI JSON 等不同导入建议
 - 支持在配置飞书开放平台应用后读取私有飞书 docx、docs/doc 和 wiki 文档正文
@@ -51,7 +51,7 @@ scripts/                   Windows 启动和端口释放脚本
 - 测试用例卡片视图、表格视图、搜索过滤
 - 每条用例展示执行就绪状态、不可执行原因、需求追溯和质量扣分原因
 - 支持用例评审模块，按通过、需修改、阻塞输出评审结论、集中问题和修改建议
-- 自动保存 Excel 并提供下载
+- 自动保存 Excel 和 XMind 思维导图并提供下载
 - 支持 MySQL 保存生成历史和用例明细
 - 支持报告中心汇总最近执行结果、通过率和覆盖风险
 - 支持报告中心导出 Markdown / HTML 测试报告
@@ -410,7 +410,7 @@ visible / hidden / textVisible / urlContains / urlEquals / titleContains / textC
 ```text
 图片：PNG / JPG / WebP / GIF / BMP / SVG
 表格：XLSX / XLSM / XLS / CSV / TSV
-文档：DOCX / PDF
+文档：DOCX / PDF / PRD
 文本：TXT / MD / JSON / YAML / LOG / FEATURE / HTML
 链接：飞书文档、知识库、PRD、接口文档或其他网页链接
 ```

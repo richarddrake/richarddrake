@@ -42,6 +42,7 @@ from app.services.openapi_importer import generate_cases_from_openapi
 from app.services.redis_service import cached_json, close_redis, init_redis, invalidate_cache_namespace, redis_key, redis_status
 from app.services.task_queue import cancel_task, enqueue_task, get_task, list_tasks, queue_status, start_task_workers, stop_task_workers
 from app.services.ui_runner import run_ui_test
+from app.services.xmind_exporter import save_cases_to_xmind
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -370,6 +371,7 @@ async def import_openapi(request: OpenApiImportRequest) -> dict:
         session_id = datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8]
         cases = enrich_cases([normalize_case(item, index + 1) for index, item in enumerate(data.get("cases") or [])])
         excel_path = save_cases_to_excel(cases, GENERATED_DIR, session_id)
+        xmind_path = save_cases_to_xmind(cases, GENERATED_DIR, session_id, title=f"{data.get('title') or 'OpenAPI'} 测试用例")
         history_status = await asyncio.to_thread(
             record_generation_session,
             session_id=session_id,
@@ -385,6 +387,7 @@ async def import_openapi(request: OpenApiImportRequest) -> dict:
         data["coverageReport"] = build_coverage_report(cases)
         data["sessionId"] = session_id
         data["downloadUrl"] = f"/api/download/{excel_path.name}"
+        data["xmindDownloadUrl"] = f"/api/download/{xmind_path.name}"
         data["historyStatus"] = history_status
         return data
     except httpx.HTTPError as exc:
@@ -434,12 +437,19 @@ async def generate(
 @app.get("/api/download/{filename}", dependencies=[Depends(require_login)])
 async def download(filename: str) -> FileResponse:
     safe_name = Path(filename).name
-    if safe_name != filename or not safe_name.endswith(".xlsx"):
+    if safe_name != filename or not safe_name.endswith((".xlsx", ".xmind")):
         raise HTTPException(status_code=400, detail="文件名不合法。")
 
     path = GENERATED_DIR / safe_name
     if not path.exists():
         raise HTTPException(status_code=404, detail="文件不存在或已过期。")
+
+    if safe_name.endswith(".xmind"):
+        return FileResponse(
+            path,
+            media_type="application/vnd.xmind.workbook",
+            filename=f"测试用例_{safe_name.removeprefix('test_cases_')}",
+        )
 
     return FileResponse(
         path,
@@ -493,6 +503,7 @@ async def _stream_generation(
         yield _sse("coverage", coverage_report)
 
         excel_path = save_cases_to_excel(cases, GENERATED_DIR, session_id)
+        xmind_path = save_cases_to_xmind(cases, GENERATED_DIR, session_id)
         history_status = await asyncio.to_thread(
             record_generation_session,
             session_id=session_id,
@@ -517,6 +528,7 @@ async def _stream_generation(
                 "sessionId": session_id,
                 "count": len(cases),
                 "downloadUrl": f"/api/download/{excel_path.name}",
+                "xmindDownloadUrl": f"/api/download/{xmind_path.name}",
                 "historyStatus": history_status,
                 "coverageReport": coverage_report,
             },

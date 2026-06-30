@@ -48,6 +48,7 @@ def save_cases_to_excel(cases: list[TestCase], target_dir: Path, session_id: str
 
     path = target_dir / f"test_cases_{session_id}.xlsx"
     workbook.save(path)
+    workbook.close()
     return path
 
 

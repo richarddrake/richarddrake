@@ -14,7 +14,7 @@ AI 辅助测试用例生成与接口自动化测试平台
 
 ## 技术栈
 
-Python、FastAPI、Vue 3、Vite、MySQL、Docker、Docker Compose、Nginx、Swagger / OpenAPI、JSONPath、Playwright、LLM、Prompt Engineering、Excel 导出
+Python、FastAPI、Vue 3、Vite、MySQL、Docker、Docker Compose、Nginx、Swagger / OpenAPI、JSONPath、Playwright、LLM、Prompt Engineering、Excel 导出、XMind 导出
 
 ## 项目链接
 
@@ -22,7 +22,7 @@ Python、FastAPI、Vue 3、Vite、MySQL、Docker、Docker Compose、Nginx、Swag
 
 ## 项目描述
 
-基于 Vue 3 + FastAPI 搭建前后端分离的 AI 辅助测试平台，围绕测试设计、接口自动化执行、Web UI 自动化执行和测试结果分析实现完整测试流程。平台支持上传思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、Swagger / OpenAPI 等多源材料，并结合业务上下文自动生成结构化测试用例，支持流式展示、用例评审、质量评分、覆盖率分析、Excel 导出和历史保存。
+基于 Vue 3 + FastAPI 搭建前后端分离的 AI 辅助测试平台，围绕测试设计、接口自动化执行、Web UI 自动化执行和测试结果分析实现完整测试流程。平台支持上传 PRD、思维导图、流程图、界面截图、Excel、Word、PDF、Markdown、JSON、Swagger / OpenAPI 等多源材料，并结合业务上下文自动生成结构化测试用例，支持流式展示、用例评审、质量评分、覆盖率分析、Excel 导出、XMind 思维导图导出和历史保存。
 
 系统不仅支持“生成测试用例”，还具备接口执行、接口用例集串联、变量提取、增强断言、MySQL 只读校验、并发执行、HTML / Markdown 测试报告生成、失败分析和缺陷跟踪能力。平台可用于登录鉴权、权限校验、商品查询、购物车、订单创建、支付、取消、管理员重置、文件上传、数据查询等典型业务接口测试，支撑从测试设计、自动化执行到测试报告和问题跟踪的闭环。
 
