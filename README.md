@@ -42,10 +42,11 @@ scripts/                   Windows 启动和端口释放脚本
 
 - 科技风 Vue 前端界面，包含左侧导航栏、工作台、用例生成、用例评审、Swagger 导入、接口执行、报告中心、缺陷跟踪和历史记录
 - 多源材料上传与预览
-- 支持 PRD、图片、Excel、CSV、Word、PDF、Markdown、JSON、YAML、文本文件、飞书/网页链接
+- 支持 PRD、图片、Excel、CSV、Word、PDF、Markdown、JSON、YAML、文本文件、飞书/网页接口文档链接
 - 需求、上下文背景、外部文档链接输入
 - 自动识别链接类型，并提示飞书、Swagger UI、OpenAPI JSON 等不同导入建议
 - 支持在配置飞书开放平台应用后读取私有飞书 docx、docs/doc 和 wiki 文档正文
+- 支持读取公开 HTML/JSON 网页接口文档正文，并在安全限制内抓取少量同站点子页面，解决接口文档只有网页、没有 PDF 或 Swagger 文件的问题
 - SSE 流式输出生成过程与测试用例
 - 生成过程解析动态展示
 - 测试用例卡片视图、表格视图、搜索过滤

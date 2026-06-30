@@ -42,6 +42,7 @@ from app.services.openapi_importer import generate_cases_from_openapi
 from app.services.redis_service import cached_json, close_redis, init_redis, invalidate_cache_namespace, redis_key, redis_status
 from app.services.task_queue import cancel_task, enqueue_task, get_task, list_tasks, queue_status, start_task_workers, stop_task_workers
 from app.services.ui_runner import run_ui_test
+from app.services.web_doc_reader import build_web_doc_context, fetch_web_references
 from app.services.xmind_exporter import save_cases_to_xmind
 
 
@@ -471,6 +472,7 @@ async def _stream_generation(
         yield _sse("thought", {"text": f"材料：{material.describe()}"})
 
     feishu_results = []
+    web_doc_results = []
     if references.strip():
         yield _sse("thought", {"text": "正在检查外部链接，并尝试读取已配置授权的飞书文档。"})
         try:
@@ -479,11 +481,22 @@ async def _stream_generation(
                 yield _sse("thought", {"text": result.to_status_text()})
         except Exception as exc:
             yield _sse("thought", {"text": f"飞书链接读取已跳过：{type(exc).__name__}"})
+        yield _sse("thought", {"text": "正在尝试读取公开网页接口文档正文。"})
+        try:
+            web_doc_results = await fetch_web_references(references, focus_text=f"{requirements}\n{context}")
+            if web_doc_results:
+                for result in web_doc_results:
+                    yield _sse("thought", {"text": result.to_status_text()})
+            else:
+                yield _sse("thought", {"text": "未检测到可直接读取的公开网页文档链接。"})
+        except Exception as exc:
+            yield _sse("thought", {"text": f"网页文档读取已跳过：{type(exc).__name__}"})
 
     material_context = build_material_context(materials, references)
     feishu_context = build_feishu_context(feishu_results)
-    if feishu_context:
-        material_context = "\n\n".join(part for part in [material_context, feishu_context] if part).strip()
+    web_doc_context = build_web_doc_context(web_doc_results)
+    if feishu_context or web_doc_context:
+        material_context = "\n\n".join(part for part in [material_context, feishu_context, web_doc_context] if part).strip()
 
     try:
         async for event in generate_test_cases(requirements, context, references, materials, material_context):

@@ -236,7 +236,7 @@
             <span>Word/PDF</span>
             <span>PRD</span>
             <span>TXT/MD/JSON</span>
-            <span>飞书链接</span>
+            <span>网页接口文档</span>
           </div>
 
           <div class="preview-grid" aria-live="polite">
@@ -267,8 +267,8 @@
           </div>
 
           <div class="field-group">
-            <label for="references">外部文档 / 飞书链接</label>
-            <textarea id="references" v-model="references" rows="4" placeholder="粘贴飞书文档、知识库、PRD、接口文档链接；已配置飞书开放平台授权时，后端会尝试读取私有文档正文"></textarea>
+            <label for="references">外部文档 / 网页接口文档 URL</label>
+            <textarea id="references" v-model="references" rows="4" placeholder="粘贴公开 HTML 接口文档、ShopXO 文档页、飞书文档、知识库或 PRD 链接；公开网页会尝试读取正文，飞书私有文档需配置开放平台授权"></textarea>
           </div>
 
           <div v-if="referenceInsights.length" class="reference-insights">
@@ -3246,9 +3246,9 @@ function analyzeReferenceLinks(text) {
     return {
       url,
       type: "网页链接",
-      status: "仅作辅助上下文",
-      state: "info",
-      suggestion: "普通网页可能只能作为背景参考；若要稳定生成用例，建议补充正文或导出文件。",
+      status: "可尝试读取正文",
+      state: "good",
+      suggestion: "公开 HTML 接口文档会尝试读取正文和同站点子页面；如果页面需要登录，再上传导出文件或粘贴关键内容。",
     };
   });
 }
