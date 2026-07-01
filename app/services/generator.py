@@ -137,7 +137,7 @@ async def generate_test_cases(
             except Exception as exc:
                 yield GenerationEvent(
                     "thought",
-                    {"text": f"模型增强接口用例暂不可用，已切换确定性接口生成：{type(exc).__name__}"},
+                    {"text": f"模型增强接口用例暂不可用，已切换确定性接口生成：{_model_error_summary(exc)}"},
                 )
 
         doc_cases = build_api_doc_cases(requirements, context, material_context)
@@ -181,7 +181,7 @@ async def generate_test_cases(
         except Exception as exc:
             yield GenerationEvent(
                 "thought",
-                {"text": f"模型调用暂不可用，已切换本地生成器：{type(exc).__name__}"},
+                {"text": f"模型调用暂不可用，已切换本地生成器：{_model_error_summary(exc)}"},
             )
 
     async for event in _generate_demo(requirements, context, references, materials, material_context):
@@ -191,6 +191,26 @@ async def generate_test_cases(
 def _api_doc_llm_enhance_enabled() -> bool:
     value = os.getenv("API_DOC_LLM_ENHANCE", "true").strip().lower()
     return value not in {"0", "false", "no", "off"}
+
+
+def _model_error_summary(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        reason = exc.response.reason_phrase or "HTTP error"
+        try:
+            payload = exc.response.json()
+        except (RuntimeError, ValueError):
+            payload = {}
+        error = payload.get("error") if isinstance(payload, dict) else {}
+        if isinstance(error, dict):
+            code = error.get("code") or error.get("type")
+            message = error.get("message") or ""
+            if code:
+                return f"HTTP {status} {code}"
+            if message:
+                return f"HTTP {status} {message[:120]}"
+        return f"HTTP {status} {reason}"
+    return type(exc).__name__
 
 
 async def _collect_openai_events(
@@ -316,6 +336,8 @@ async def _generate_with_openai(
     url = f"{base_url}/chat/completions"
     async with httpx.AsyncClient(timeout=timeout_seconds) as client:
         async with client.stream("POST", url, headers=headers, json=payload) as response:
+            if response.status_code >= 400:
+                await response.aread()
             response.raise_for_status()
             async for raw_line in response.aiter_lines():
                 if not raw_line.startswith("data:"):
