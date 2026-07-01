@@ -501,12 +501,331 @@ async def _generate_demo(
             yield GenerationEvent("case", case)
         return
 
-    cases = _demo_cases()
+    cases = _requirement_driven_cases(requirements, context, material_context) or _demo_cases()
+    if cases:
+        yield GenerationEvent(
+            "thought",
+            {
+                "text": (
+                    f"本地兜底生成器已根据文字需求生成 {len(cases)} 条业务相关用例；"
+                    "未检测到真实接口地址或页面地址，因此不会附加平台自测 api_test/ui_test。"
+                )
+            },
+        )
     for index, case in enumerate(cases, 1):
         await asyncio.sleep(0.06)
         case["id"] = f"TC-{index:03d}"
-        case = _with_demo_api_test(case, index)
         yield GenerationEvent("case", case)
+
+
+def _requirement_driven_cases(requirements: str, context: str, material_context: str) -> list[dict[str, Any]]:
+    focus = f"{requirements}\n{context}\n{material_context}".strip()
+    if not focus:
+        return []
+    lowered = focus.lower()
+    if "登录" in focus or "login" in lowered:
+        return _login_requirement_cases(requirements, context)
+    return _generic_requirement_cases(requirements, context)
+
+
+def _login_requirement_cases(requirements: str, context: str) -> list[dict[str, Any]]:
+    module = _infer_login_module(requirements, context)
+    source = "用户文字需求和业务背景"
+    account_rule = _extract_named_rule(requirements, "账号") or "账号应符合需求约束"
+    password_rule = _extract_named_rule(requirements, "密码") or "密码应符合需求约束"
+    return [
+        _text_case(
+            module,
+            "已注册合法账号和正确密码登录成功",
+            "P0",
+            "功能",
+            "覆盖登录主流程，账号满足 6-10 位自然数且已注册，密码正确",
+            ["登录功能可访问", "准备已注册的合法 QQ 账号", "准备该账号的正确密码"],
+            ["输入 6-10 位自然数且已注册的账号", "输入正确密码", "点击登录"],
+            ["登录成功", "进入登录后首页或目标页", "展示当前用户登录态"],
+            {"账号规则": account_rule, "密码规则": password_rule, "账号": "123456", "密码": "正确密码"},
+            ["登录", "主流程", "正向"],
+            source,
+        ),
+        _text_case(
+            module,
+            "账号为空时阻止登录并提示账号必填",
+            "P0",
+            "异常",
+            "覆盖账号非空校验",
+            ["登录页面已打开"],
+            ["账号输入框留空", "输入任意密码", "点击登录"],
+            ["系统阻止登录", "账号输入框附近展示必填提示", "不会发起成功登录态"],
+            {"账号": "", "密码": "任意密码"},
+            ["登录", "账号", "必填"],
+            source,
+        ),
+        _text_case(
+            module,
+            "账号少于 6 位时提示账号格式错误",
+            "P0",
+            "边界",
+            "覆盖账号长度下边界外侧",
+            ["登录页面已打开"],
+            ["输入 5 位自然数账号", "输入正确或任意密码", "点击登录"],
+            ["系统阻止登录", "提示账号需为 6-10 位自然数", "不进入登录后页面"],
+            {"账号": "12345", "密码": "任意密码"},
+            ["登录", "账号", "长度边界"],
+            source,
+        ),
+        _text_case(
+            module,
+            "账号为 6 位已注册自然数时允许进入密码校验",
+            "P1",
+            "边界",
+            "覆盖账号长度下边界合法值",
+            ["准备 6 位且已注册账号"],
+            ["输入 6 位已注册自然数账号", "输入正确密码", "点击登录"],
+            ["账号格式校验通过", "密码正确时登录成功"],
+            {"账号": "123456", "密码": "正确密码"},
+            ["登录", "账号", "边界合法"],
+            source,
+        ),
+        _text_case(
+            module,
+            "账号为 10 位已注册自然数时允许进入密码校验",
+            "P1",
+            "边界",
+            "覆盖账号长度上边界合法值",
+            ["准备 10 位且已注册账号"],
+            ["输入 10 位已注册自然数账号", "输入正确密码", "点击登录"],
+            ["账号格式校验通过", "密码正确时登录成功"],
+            {"账号": "1234567890", "密码": "正确密码"},
+            ["登录", "账号", "边界合法"],
+            source,
+        ),
+        _text_case(
+            module,
+            "账号超过 10 位时提示账号格式错误",
+            "P0",
+            "边界",
+            "覆盖账号长度上边界外侧",
+            ["登录页面已打开"],
+            ["输入 11 位自然数账号", "输入任意密码", "点击登录"],
+            ["系统阻止登录", "提示账号需为 6-10 位自然数", "不进入登录后页面"],
+            {"账号": "12345678901", "密码": "任意密码"},
+            ["登录", "账号", "长度边界"],
+            source,
+        ),
+        _text_case(
+            module,
+            "账号包含非数字字符时提示账号格式错误",
+            "P0",
+            "异常",
+            "覆盖账号自然数格式校验",
+            ["登录页面已打开"],
+            ["输入包含字母、空格或特殊字符的账号", "输入任意密码", "点击登录"],
+            ["系统阻止登录", "提示账号只能为自然数或数字格式", "不会产生登录态"],
+            {"账号": "12345a", "密码": "任意密码"},
+            ["登录", "账号", "格式校验"],
+            source,
+        ),
+        _text_case(
+            module,
+            "未注册合法格式账号登录失败",
+            "P0",
+            "异常",
+            "覆盖账号格式合法但不存在的场景",
+            ["准备 6-10 位自然数但未注册的账号"],
+            ["输入未注册账号", "输入任意密码", "点击登录"],
+            ["登录失败", "提示账号不存在或账号/密码错误", "不泄露账号是否注册的敏感细节时提示策略一致"],
+            {"账号": "987654", "密码": "任意密码"},
+            ["登录", "未注册", "安全"],
+            source,
+        ),
+        _text_case(
+            module,
+            "已注册账号输入错误密码登录失败",
+            "P0",
+            "异常",
+            "覆盖密码错误校验",
+            ["准备已注册合法账号"],
+            ["输入已注册账号", "输入错误密码", "点击登录"],
+            ["登录失败", "展示密码错误或账号/密码错误提示", "用户仍停留在登录页"],
+            {"账号": "123456", "密码": "错误密码"},
+            ["登录", "密码", "错误密码"],
+            source,
+        ),
+        _text_case(
+            module,
+            "已注册账号密码为空时阻止登录",
+            "P0",
+            "异常",
+            "覆盖密码非空校验",
+            ["登录页面已打开", "准备已注册合法账号"],
+            ["输入已注册账号", "密码输入框留空", "点击登录"],
+            ["系统阻止登录", "密码输入框附近展示必填提示", "不会进入登录后页面"],
+            {"账号": "123456", "密码": ""},
+            ["登录", "密码", "必填"],
+            source,
+        ),
+        _text_case(
+            module,
+            "账号和密码均为空时展示完整校验提示",
+            "P1",
+            "异常",
+            "覆盖多个必填字段同时为空",
+            ["登录页面已打开"],
+            ["账号输入框留空", "密码输入框留空", "点击登录"],
+            ["系统阻止登录", "账号和密码均展示必填提示", "页面不跳转且输入焦点定位合理"],
+            {"账号": "", "密码": ""},
+            ["登录", "表单校验", "必填"],
+            source,
+        ),
+        _text_case(
+            module,
+            "连续多次密码错误触发安全限制",
+            "P1",
+            "安全",
+            "覆盖暴力破解防护和错误次数限制",
+            ["准备已注册合法账号", "系统配置了登录失败限制或验证码策略"],
+            ["连续多次输入错误密码并提交", "观察错误次数达到阈值后的页面反馈"],
+            ["系统限制继续尝试或要求验证码", "错误提示清晰", "不会锁定无关账号或影响正确密码场景"],
+            {"账号": "123456", "密码": "连续错误密码"},
+            ["登录", "安全", "防暴力破解"],
+            source,
+        ),
+    ]
+
+
+def _generic_requirement_cases(requirements: str, context: str) -> list[dict[str, Any]]:
+    module = _infer_generic_module(requirements, context)
+    source = "用户文字需求和业务背景"
+    return [
+        _text_case(
+            module,
+            f"{module}主流程成功",
+            "P0",
+            "功能",
+            "覆盖用户要求中的核心成功路径",
+            ["目标功能可访问", "准备满足要求的有效数据"],
+            ["进入目标功能", "按用户需求填写或选择有效数据", "提交或触发核心操作"],
+            ["操作成功", "页面或系统状态符合用户需求", "关键结果可被验证"],
+            {"需求": _compact(requirements, "用户文字需求")},
+            ["主流程", "正向"],
+            source,
+        ),
+        _text_case(
+            module,
+            f"{module}必填信息为空时校验失败",
+            "P0",
+            "异常",
+            "覆盖用户要求中的必填和空值场景",
+            ["目标功能可访问"],
+            ["将关键输入留空", "提交或触发核心操作"],
+            ["系统阻止操作", "展示明确错误提示", "已输入信息不丢失"],
+            {"关键字段": "空值"},
+            ["异常", "必填"],
+            source,
+        ),
+        _text_case(
+            module,
+            f"{module}非法格式输入时校验失败",
+            "P1",
+            "异常",
+            "覆盖格式错误和非法字符",
+            ["目标功能可访问"],
+            ["输入不符合规则的数据", "提交或触发核心操作"],
+            ["系统提示格式错误", "不会产生成功业务结果"],
+            {"关键字段": "非法格式"},
+            ["异常", "格式校验"],
+            source,
+        ),
+        _text_case(
+            module,
+            f"{module}边界值校验正确",
+            "P1",
+            "边界",
+            "覆盖最小值、最大值和超出边界",
+            ["已明确或可推断字段约束"],
+            ["输入最小合法值", "输入最大合法值", "输入越界值", "分别提交"],
+            ["合法边界可通过", "越界值被拦截并提示原因"],
+            {"边界数据": "最小值/最大值/越界值"},
+            ["边界值"],
+            source,
+        ),
+        _text_case(
+            module,
+            f"{module}重复提交不会产生重复结果",
+            "P1",
+            "稳定性",
+            "覆盖重复点击和幂等控制",
+            ["已准备完整合法数据"],
+            ["连续快速触发提交操作", "观察按钮状态和最终结果"],
+            ["只产生一次有效结果", "重复请求被安全处理"],
+            {"数据": "同一份合法数据"},
+            ["幂等", "稳定性"],
+            source,
+        ),
+        _text_case(
+            module,
+            f"{module}无权限用户无法执行受限操作",
+            "P0",
+            "权限",
+            "覆盖访问控制和越权风险",
+            ["准备无权限账号或未登录状态"],
+            ["访问目标功能", "尝试执行受限操作"],
+            ["系统拒绝访问或隐藏入口", "不会产生业务变更"],
+            {"用户": "无权限账号/未登录"},
+            ["权限", "安全"],
+            source,
+        ),
+    ]
+
+
+def _text_case(
+    module: str,
+    title: str,
+    priority: str,
+    case_type: str,
+    scenario: str,
+    preconditions: list[str],
+    steps: list[str],
+    expected_results: list[str],
+    test_data: Any,
+    tags: list[str],
+    source: str,
+) -> dict[str, Any]:
+    return {
+        "module": module,
+        "title": title,
+        "priority": priority,
+        "case_type": case_type,
+        "scenario": scenario,
+        "preconditions": preconditions,
+        "steps": steps,
+        "expected_results": expected_results,
+        "test_data": json.dumps(test_data, ensure_ascii=False) if not isinstance(test_data, str) else test_data,
+        "tags": tags,
+        "source": source,
+        "requirement_id": module,
+    }
+
+
+def _infer_login_module(requirements: str, context: str) -> str:
+    text = f"{requirements}\n{context}"
+    if "QQ" in text or "qq" in text.lower():
+        return "QQ登录"
+    return "登录功能"
+
+
+def _infer_generic_module(requirements: str, context: str) -> str:
+    text = f"{context}\n{requirements}".strip()
+    for pattern in (r"验证([^，。；;\n]{2,20})", r"测试([^，。；;\n]{2,20})", r"关于([^，。；;\n]{2,20})"):
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip()
+    return _compact(context or requirements, "业务功能")[:20]
+
+
+def _extract_named_rule(text: str, name: str) -> str:
+    match = re.search(rf"{re.escape(name)}\s*[：:]\s*([^。；;\n]+)", text or "")
+    return match.group(1).strip() if match else ""
 
 
 def _cases_from_api_docs(requirements: str, context: str, material_context: str) -> list[dict[str, Any]]:
@@ -894,121 +1213,6 @@ def _nearest_source_url(lines: list[str], index: int) -> str:
         if line.startswith("来源："):
             return line.removeprefix("来源：").strip()
     return ""
-
-
-def _with_demo_api_test(case: dict[str, Any], index: int) -> dict[str, Any]:
-    base_variables = {"base_url": "http://127.0.0.1:8000"}
-    api_tests: dict[int, dict[str, Any]] = {
-        1: {
-            "name": "数据库状态接口检查",
-            "method": "GET",
-            "url": "{{base_url}}/api/database/status",
-            "headers": {"Accept": "application/json"},
-            "body": "",
-            "bodyMode": "raw",
-            "expectedStatus": 200,
-            "expectedContains": "message",
-            "timeoutSeconds": 10,
-            "maxResponseMs": 1000,
-            "variables": base_variables,
-            "assertions": [
-                {"name": "enabled 字段存在", "source": "json", "path": "$.enabled", "operator": "exists"},
-                {"name": "message 字段存在", "source": "json", "path": "$.message", "operator": "exists"},
-            ],
-            "extractors": [{"name": "db_message", "source": "json", "path": "$.message"}],
-            "databaseAssertions": [],
-            "jsonSchema": {
-                "type": "object",
-                "required": ["enabled", "connected", "message"],
-                "properties": {
-                    "enabled": {"type": "boolean"},
-                    "connected": {"type": "boolean"},
-                    "message": {"type": "string"},
-                },
-            },
-        },
-        2: {
-            "name": "生成历史接口检查",
-            "method": "GET",
-            "url": "{{base_url}}/api/history?limit=1",
-            "headers": {"Accept": "application/json"},
-            "body": "",
-            "bodyMode": "raw",
-            "expectedStatus": 200,
-            "expectedContains": "items",
-            "timeoutSeconds": 10,
-            "maxResponseMs": 1500,
-            "variables": base_variables,
-            "assertions": [
-                {"name": "items 字段存在", "source": "json", "path": "$.items", "operator": "exists"},
-                {"name": "message 字段存在", "source": "json", "path": "$.message", "operator": "exists"},
-            ],
-            "extractors": [],
-            "databaseAssertions": [],
-            "jsonSchema": {
-                "type": "object",
-                "required": ["enabled", "connected", "message", "items"],
-                "properties": {
-                    "enabled": {"type": "boolean"},
-                    "connected": {"type": "boolean"},
-                    "message": {"type": "string"},
-                    "items": {"type": "array"},
-                },
-            },
-        },
-        6: {
-            "name": "执行器接口自检",
-            "method": "POST",
-            "url": "{{base_url}}/api/api-tests/run",
-            "headers": {"Accept": "application/json", "Content-Type": "application/json"},
-            "body": json.dumps(
-                {
-                    "name": "嵌套健康检查",
-                    "method": "GET",
-                    "url": "http://127.0.0.1:8000/",
-                    "expectedStatus": 200,
-                    "assertions": [{"name": "status 字段存在", "source": "json", "path": "$.status", "operator": "exists"}],
-                },
-                ensure_ascii=False,
-            ),
-            "bodyMode": "json",
-            "expectedStatus": 200,
-            "expectedContains": "passed",
-            "timeoutSeconds": 10,
-            "maxResponseMs": 3000,
-            "variables": base_variables,
-            "assertions": [
-                {"name": "执行结果存在", "source": "json", "path": "$.passed", "operator": "exists"},
-                {"name": "断言摘要存在", "source": "json", "path": "$.summary", "operator": "exists"},
-            ],
-            "extractors": [{"name": "nested_run_id", "source": "json", "path": "$.runId"}],
-            "databaseAssertions": [],
-            "jsonSchema": {"type": "object", "required": ["runId", "passed", "assertions"]},
-        },
-        9: {
-            "name": "接口执行历史检查",
-            "method": "GET",
-            "url": "{{base_url}}/api/api-tests/history?limit=5",
-            "headers": {"Accept": "application/json"},
-            "body": "",
-            "bodyMode": "raw",
-            "expectedStatus": 200,
-            "expectedContains": "items",
-            "timeoutSeconds": 10,
-            "maxResponseMs": 1500,
-            "variables": base_variables,
-            "assertions": [{"name": "items 字段存在", "source": "json", "path": "$.items", "operator": "exists"}],
-            "extractors": [],
-            "databaseAssertions": [],
-            "jsonSchema": {"type": "object", "required": ["enabled", "connected", "message", "items"]},
-        },
-    }
-    if index in api_tests:
-        enriched = dict(case)
-        enriched["api_test"] = api_tests[index]
-        enriched["tags"] = [*enriched.get("tags", []), "接口", "自动化"]
-        return enriched
-    return case
 
 
 def _demo_cases() -> list[dict[str, Any]]:
