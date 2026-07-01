@@ -41,6 +41,23 @@ async def generate_test_cases(
     materials: list[UploadedMaterial],
     material_context: str,
 ) -> AsyncIterator[GenerationEvent]:
+    doc_cases = _cases_from_api_docs(requirements, context, material_context)
+    if doc_cases and _api_doc_cases_first():
+        yield GenerationEvent(
+            "thought",
+            {
+                "text": (
+                    f"已优先使用接口文档正文生成 {len(doc_cases)} 条可执行接口用例；"
+                    "检测到请求 URL、请求方法、参数和响应示例，跳过通用模板生成。"
+                )
+            },
+        )
+        for index, case in enumerate(doc_cases, 1):
+            await asyncio.sleep(0.04)
+            case["id"] = f"TC-{index:03d}"
+            yield GenerationEvent("case", case)
+        return
+
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if api_key:
         emitted_cases = 0
@@ -70,6 +87,11 @@ async def generate_test_cases(
 
     async for event in _generate_demo(requirements, context, references, materials, material_context):
         yield event
+
+
+def _api_doc_cases_first() -> bool:
+    value = os.getenv("API_DOC_CASES_FIRST", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 async def _generate_with_openai(
