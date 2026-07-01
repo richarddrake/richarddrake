@@ -12,6 +12,17 @@ import httpx
 from dotenv import load_dotenv
 
 from app.schemas import UploadedMaterial
+from app.services.api_doc_parser import (
+    build_api_doc_cases,
+    describe_api_doc_facts,
+    extract_api_doc_facts,
+    facts_to_prompt_context,
+    select_api_doc_facts,
+)
+from app.services.case_validator import (
+    summarize_validation_issues,
+    validate_cases_against_api_facts,
+)
 
 load_dotenv()
 
@@ -41,22 +52,110 @@ async def generate_test_cases(
     materials: list[UploadedMaterial],
     material_context: str,
 ) -> AsyncIterator[GenerationEvent]:
-    doc_cases = _cases_from_api_docs(requirements, context, material_context)
-    if doc_cases and _api_doc_cases_first():
-        yield GenerationEvent(
-            "thought",
-            {
-                "text": (
-                    f"已优先使用接口文档正文生成 {len(doc_cases)} 条可执行接口用例；"
-                    "检测到请求 URL、请求方法、参数和响应示例，跳过通用模板生成。"
+    api_facts = select_api_doc_facts(
+        extract_api_doc_facts(material_context),
+        requirements,
+        context,
+    )
+    if api_facts:
+        yield GenerationEvent("thought", {"text": describe_api_doc_facts(api_facts)})
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        fact_context = facts_to_prompt_context(api_facts)
+
+        if api_key and _api_doc_llm_enhance_enabled():
+            try:
+                events = await _collect_openai_events(
+                    requirements,
+                    context,
+                    references,
+                    materials,
+                    material_context,
+                    api_key,
+                    api_fact_context=fact_context,
                 )
-            },
-        )
-        for index, case in enumerate(doc_cases, 1):
-            await asyncio.sleep(0.04)
-            case["id"] = f"TC-{index:03d}"
-            yield GenerationEvent("case", case)
-        return
+                cases = _case_payloads(events)
+                validation = validate_cases_against_api_facts(cases, api_facts)
+                if validation.passed:
+                    yield GenerationEvent(
+                        "thought",
+                        {
+                            "text": (
+                                f"大模型已基于接口事实扩展 {len(cases)} 条用例，"
+                                f"{validation.matched_cases} 条可执行接口配置通过事实校验。"
+                            )
+                        },
+                    )
+                    async for event in _stream_collected_events(events):
+                        yield event
+                    return
+
+                yield GenerationEvent(
+                    "thought",
+                    {
+                        "text": (
+                            "模型生成结果未通过接口事实校验："
+                            f"{summarize_validation_issues(validation)}；正在按真实接口配置修复一次。"
+                        )
+                    },
+                )
+                repair_events = await _collect_openai_events(
+                    requirements,
+                    context,
+                    references,
+                    materials,
+                    material_context,
+                    api_key,
+                    api_fact_context=fact_context,
+                    repair_feedback=_repair_feedback_text(validation.issues),
+                )
+                repair_cases = _case_payloads(repair_events)
+                repair_validation = validate_cases_against_api_facts(repair_cases, api_facts)
+                if repair_validation.passed:
+                    yield GenerationEvent(
+                        "thought",
+                        {
+                            "text": (
+                                f"修复后的模型结果已通过接口事实校验，"
+                                f"将输出 {len(repair_cases)} 条增强用例。"
+                            )
+                        },
+                    )
+                    async for event in _stream_collected_events(repair_events):
+                        yield event
+                    return
+
+                yield GenerationEvent(
+                    "thought",
+                    {
+                        "text": (
+                            "模型修复结果仍未满足真实接口配置要求："
+                            f"{summarize_validation_issues(repair_validation)}；"
+                            "已切换为平台确定性接口用例生成。"
+                        )
+                    },
+                )
+            except Exception as exc:
+                yield GenerationEvent(
+                    "thought",
+                    {"text": f"模型增强接口用例暂不可用，已切换确定性接口生成：{type(exc).__name__}"},
+                )
+
+        doc_cases = build_api_doc_cases(requirements, context, material_context)
+        if doc_cases:
+            yield GenerationEvent(
+                "thought",
+                {
+                    "text": (
+                        f"已使用接口事实解析器生成 {len(doc_cases)} 条可执行接口用例；"
+                        "每条用例均绑定真实请求方法、接口路径、参数样例和响应断言。"
+                    )
+                },
+            )
+            for index, case in enumerate(doc_cases, 1):
+                await asyncio.sleep(0.04)
+                case["id"] = f"TC-{index:03d}"
+                yield GenerationEvent("case", case)
+            return
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if api_key:
@@ -89,9 +188,67 @@ async def generate_test_cases(
         yield event
 
 
-def _api_doc_cases_first() -> bool:
-    value = os.getenv("API_DOC_CASES_FIRST", "true").strip().lower()
+def _api_doc_llm_enhance_enabled() -> bool:
+    value = os.getenv("API_DOC_LLM_ENHANCE", "true").strip().lower()
     return value not in {"0", "false", "no", "off"}
+
+
+async def _collect_openai_events(
+    requirements: str,
+    context: str,
+    references: str,
+    materials: list[UploadedMaterial],
+    material_context: str,
+    api_key: str,
+    *,
+    api_fact_context: str = "",
+    repair_feedback: str = "",
+) -> list[GenerationEvent]:
+    events: list[GenerationEvent] = []
+    async for event in _generate_with_openai(
+        requirements,
+        context,
+        references,
+        materials,
+        material_context,
+        api_key,
+        api_fact_context=api_fact_context,
+        repair_feedback=repair_feedback,
+    ):
+        events.append(event)
+    return events
+
+
+def _case_payloads(events: list[GenerationEvent]) -> list[dict[str, Any]]:
+    return [dict(event.payload) for event in events if event.kind == "case"]
+
+
+async def _stream_collected_events(events: list[GenerationEvent]) -> AsyncIterator[GenerationEvent]:
+    case_index = 0
+    for event in events:
+        await asyncio.sleep(0.02)
+        if event.kind != "case":
+            yield event
+            continue
+        case_index += 1
+        payload = dict(event.payload)
+        payload["id"] = f"TC-{case_index:03d}"
+        yield GenerationEvent("case", payload)
+
+
+def _repair_feedback_text(issues: list[str]) -> str:
+    details = "\n".join(f"- {issue}" for issue in issues[:8])
+    return f"""
+上一次生成结果没有通过平台事实校验，请修复后重新输出完整 NDJSON：
+{details}
+
+修复重点：
+1. 所有接口用例必须包含 api_test。
+2. api_test.method 和 api_test.url 必须匹配接口文档事实。
+3. 不允许使用平台自测接口。
+4. 正向用例必须带上文档请求示例或关键业务参数。
+5. 断言必须覆盖 HTTP 状态码和响应 JSON 字段。
+""".strip()
 
 
 async def _generate_with_openai(
@@ -101,6 +258,9 @@ async def _generate_with_openai(
     materials: list[UploadedMaterial],
     material_context: str,
     api_key: str,
+    *,
+    api_fact_context: str = "",
+    repair_feedback: str = "",
 ) -> AsyncIterator[GenerationEvent]:
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -110,7 +270,15 @@ async def _generate_with_openai(
     content: list[dict[str, Any]] = [
         {
             "type": "text",
-            "text": _build_prompt(requirements, context, references, materials, material_context),
+            "text": _build_prompt(
+                requirements,
+                context,
+                references,
+                materials,
+                material_context,
+                api_fact_context=api_fact_context,
+                repair_feedback=repair_feedback,
+            ),
         }
     ]
     for image in [item for item in materials if item.is_image]:
@@ -181,9 +349,14 @@ def _build_prompt(
     references: str,
     materials: list[UploadedMaterial],
     material_context: str,
+    *,
+    api_fact_context: str = "",
+    repair_feedback: str = "",
 ) -> str:
     material_summary = "\n".join(f"- {item.describe()}" for item in materials) or "- 未上传文件"
     image_count = sum(1 for item in materials if item.is_image)
+    api_fact_section = f"\n\n{api_fact_context}" if api_fact_context.strip() else ""
+    repair_section = f"\n\n校验修复反馈：\n{repair_feedback}" if repair_feedback.strip() else ""
 
     return f"""
 请根据上传的多源材料、用户要求和上下文，生成专业、覆盖全面、可落地执行的测试用例。
@@ -209,6 +382,8 @@ def _build_prompt(
 
 外部文档/链接状态：
 {"已提供，详见抽取文本材料" if references.strip() else "无"}
+{api_fact_section}
+{repair_section}
 
 输出要求：
 1. 严格只输出 NDJSON，每一行都是一个独立 JSON 对象，不要输出 Markdown、代码块或解释性段落。
@@ -287,7 +462,7 @@ async def _generate_demo(
         await asyncio.sleep(0.12)
         yield GenerationEvent("thought", {"text": thought})
 
-    doc_cases = _cases_from_api_docs(requirements, context, material_context)
+    doc_cases = build_api_doc_cases(requirements, context, material_context)
     if doc_cases:
         yield GenerationEvent(
             "thought",

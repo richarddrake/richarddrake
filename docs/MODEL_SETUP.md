@@ -96,6 +96,8 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=120
 LLM_MAX_TOKENS=5000
+API_DOC_LLM_ENHANCE=true
+API_DOC_DEFAULT_BASE_URL=http://127.0.0.1:8080
 ```
 
 注意：
@@ -104,6 +106,7 @@ LLM_MAX_TOKENS=5000
 - `OPENAI_BASE_URL` 末尾可以不加 `/`。
 - `OPENAI_MODEL` 要填写支持图片输入的模型。
 - 如果模型输出被截断，可以适当调大 `LLM_MAX_TOKENS`。
+- `API_DOC_LLM_ENHANCE=true` 时，网页接口文档会先提取真实接口事实，再让模型扩展场景，并由平台校验 `api_test` 是否匹配真实接口。
 
 ## 5. 使用第三方 OpenAI-compatible 服务
 
@@ -115,6 +118,8 @@ OPENAI_BASE_URL=https://你的服务商域名/v1
 OPENAI_MODEL=你的多模态模型名称
 LLM_TIMEOUT_SECONDS=120
 LLM_MAX_TOKENS=5000
+API_DOC_LLM_ENHANCE=true
+API_DOC_DEFAULT_BASE_URL=http://127.0.0.1:8080
 ```
 
 重点检查：
