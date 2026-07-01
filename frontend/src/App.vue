@@ -312,6 +312,10 @@
                 <Download aria-hidden="true" />
                 XMind
               </button>
+              <button class="download-button" type="button" :disabled="!mdDownloadUrl" @click="downloadMarkdown">
+                <FileText aria-hidden="true" />
+                Markdown
+              </button>
             </div>
           </div>
 
@@ -1434,6 +1438,10 @@
                 <Download aria-hidden="true" />
                 XMind
               </button>
+              <button class="download-button" type="button" :disabled="!item.mdDownloadUrl" @click="downloadHistoryMarkdown(item.mdDownloadUrl)">
+                <FileText aria-hidden="true" />
+                Markdown
+              </button>
             </div>
           </article>
           <div v-if="!historyItems.length" class="empty-state history-empty">
@@ -1532,6 +1540,7 @@ const apiRunHistory = ref([]);
 const uiRunHistory = ref([]);
 const downloadUrl = ref("");
 const xmindDownloadUrl = ref("");
+const mdDownloadUrl = ref("");
 const activeView = ref("cards");
 const isGenerating = ref(false);
 const isDragging = ref(false);
@@ -1997,6 +2006,7 @@ function prepareGenerationState() {
   cases.value = [];
   downloadUrl.value = "";
   xmindDownloadUrl.value = "";
+  mdDownloadUrl.value = "";
   coverageReport.value = null;
   caseReviewReport.value = null;
   caseExecutionMap.value = {};
@@ -2081,6 +2091,7 @@ function handleEvent(eventName, data) {
   if (eventName === "done") {
     downloadUrl.value = data.downloadUrl;
     xmindDownloadUrl.value = data.xmindDownloadUrl || "";
+    mdDownloadUrl.value = data.mdDownloadUrl || "";
     coverageReport.value = data.coverageReport || coverageReport.value;
     statusText.value = `完成，已保存 ${data.count || cases.value.length} 条`;
     progress.value = 100;
@@ -2106,6 +2117,7 @@ function resetAll() {
   cases.value = [];
   downloadUrl.value = "";
   xmindDownloadUrl.value = "";
+  mdDownloadUrl.value = "";
   coverageReport.value = null;
   caseReviewReport.value = null;
   caseExecutionMap.value = {};
@@ -2160,6 +2172,7 @@ async function importOpenApi() {
     };
     downloadUrl.value = data.downloadUrl || "";
     xmindDownloadUrl.value = data.xmindDownloadUrl || "";
+    mdDownloadUrl.value = data.mdDownloadUrl || "";
     statusText.value = `Swagger 已生成 ${cases.value.length} 条`;
     progress.value = 100;
     activeView.value = "cards";
@@ -2210,6 +2223,7 @@ function resetOpenApiImport() {
   openApiBaseUrl.value = API_BASE_URL || "http://127.0.0.1:8000";
   openApiSummary.value = {};
   xmindDownloadUrl.value = "";
+  mdDownloadUrl.value = "";
 }
 
 async function fetchDatabaseStatus() {
@@ -2915,6 +2929,7 @@ async function loadHistoryDetail(sessionId) {
     coverageReport.value = await analyzeCurrentCoverage(cases.value);
     downloadUrl.value = detail.downloadUrl || "";
     xmindDownloadUrl.value = detail.xmindDownloadUrl || "";
+    mdDownloadUrl.value = detail.mdDownloadUrl || "";
     statusText.value = `已加载历史 ${cases.value.length} 条`;
     progress.value = cases.value.length ? 100 : 0;
     activeView.value = "cards";
@@ -2936,6 +2951,12 @@ function downloadXmind() {
   }
 }
 
+function downloadMarkdown() {
+  if (mdDownloadUrl.value) {
+    window.location.href = apiUrl(mdDownloadUrl.value);
+  }
+}
+
 function downloadHistoryExcel(url) {
   if (url) {
     window.location.href = apiUrl(url);
@@ -2943,6 +2964,12 @@ function downloadHistoryExcel(url) {
 }
 
 function downloadHistoryXmind(url) {
+  if (url) {
+    window.location.href = apiUrl(url);
+  }
+}
+
+function downloadHistoryMarkdown(url) {
   if (url) {
     window.location.href = apiUrl(url);
   }

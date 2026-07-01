@@ -37,6 +37,7 @@ from app.services.excel_exporter import save_cases_to_excel
 from app.services.failure_agent import analyze_failure
 from app.services.feishu_reader import build_feishu_context, fetch_feishu_references
 from app.services.generator import GenerationEvent, generate_test_cases
+from app.services.markdown_exporter import save_cases_to_markdown
 from app.services.material_parser import build_material_context, read_upload_materials
 from app.services.openapi_importer import generate_cases_from_openapi
 from app.services.redis_service import cached_json, close_redis, init_redis, invalidate_cache_namespace, redis_key, redis_status
@@ -373,6 +374,7 @@ async def import_openapi(request: OpenApiImportRequest) -> dict:
         cases = enrich_cases([normalize_case(item, index + 1) for index, item in enumerate(data.get("cases") or [])])
         excel_path = save_cases_to_excel(cases, GENERATED_DIR, session_id)
         xmind_path = save_cases_to_xmind(cases, GENERATED_DIR, session_id, title=f"{data.get('title') or 'OpenAPI'} 测试用例")
+        markdown_path = save_cases_to_markdown(cases, GENERATED_DIR, session_id, title=f"{data.get('title') or 'OpenAPI'} 测试用例")
         history_status = await asyncio.to_thread(
             record_generation_session,
             session_id=session_id,
@@ -389,6 +391,7 @@ async def import_openapi(request: OpenApiImportRequest) -> dict:
         data["sessionId"] = session_id
         data["downloadUrl"] = f"/api/download/{excel_path.name}"
         data["xmindDownloadUrl"] = f"/api/download/{xmind_path.name}"
+        data["mdDownloadUrl"] = f"/api/download/{markdown_path.name}"
         data["historyStatus"] = history_status
         return data
     except httpx.HTTPError as exc:
@@ -438,7 +441,7 @@ async def generate(
 @app.get("/api/download/{filename}", dependencies=[Depends(require_login)])
 async def download(filename: str) -> FileResponse:
     safe_name = Path(filename).name
-    if safe_name != filename or not safe_name.endswith((".xlsx", ".xmind")):
+    if safe_name != filename or not safe_name.endswith((".xlsx", ".xmind", ".md")):
         raise HTTPException(status_code=400, detail="文件名不合法。")
 
     path = GENERATED_DIR / safe_name
@@ -449,6 +452,12 @@ async def download(filename: str) -> FileResponse:
         return FileResponse(
             path,
             media_type="application/vnd.xmind.workbook",
+            filename=f"测试用例_{safe_name.removeprefix('test_cases_')}",
+        )
+    if safe_name.endswith(".md"):
+        return FileResponse(
+            path,
+            media_type="text/markdown; charset=utf-8",
             filename=f"测试用例_{safe_name.removeprefix('test_cases_')}",
         )
 
@@ -517,6 +526,7 @@ async def _stream_generation(
 
         excel_path = save_cases_to_excel(cases, GENERATED_DIR, session_id)
         xmind_path = save_cases_to_xmind(cases, GENERATED_DIR, session_id)
+        markdown_path = save_cases_to_markdown(cases, GENERATED_DIR, session_id)
         history_status = await asyncio.to_thread(
             record_generation_session,
             session_id=session_id,
@@ -542,6 +552,7 @@ async def _stream_generation(
                 "count": len(cases),
                 "downloadUrl": f"/api/download/{excel_path.name}",
                 "xmindDownloadUrl": f"/api/download/{xmind_path.name}",
+                "mdDownloadUrl": f"/api/download/{markdown_path.name}",
                 "historyStatus": history_status,
                 "coverageReport": coverage_report,
             },

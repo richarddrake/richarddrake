@@ -766,11 +766,8 @@ def _user_to_dict(user: UserAccount) -> dict[str, Any]:
 
 
 def _session_summary(session: GenerationSession) -> dict[str, Any]:
-    xmind_download_url = ""
-    if session.download_url.endswith(".xlsx"):
-        candidate = session.download_url.removesuffix(".xlsx") + ".xmind"
-        if (BASE_DIR / "generated" / Path(candidate).name).exists():
-            xmind_download_url = candidate
+    xmind_download_url = _sibling_download_url(session.download_url, ".xmind")
+    md_download_url = _sibling_download_url(session.download_url, ".md")
     return {
         "sessionId": session.session_id,
         "createdAt": session.created_at.isoformat() + "Z" if session.created_at else "",
@@ -781,9 +778,17 @@ def _session_summary(session: GenerationSession) -> dict[str, Any]:
         "excelFilename": session.excel_filename,
         "downloadUrl": session.download_url,
         "xmindDownloadUrl": xmind_download_url,
+        "mdDownloadUrl": md_download_url,
         "status": session.status,
         "summary": _load_json(session.summary, {}),
     }
+
+
+def _sibling_download_url(download_url: str, suffix: str) -> str:
+    if not download_url.endswith(".xlsx"):
+        return ""
+    candidate = download_url.removesuffix(".xlsx") + suffix
+    return candidate if (BASE_DIR / "generated" / Path(candidate).name).exists() else ""
 
 
 def _material_to_dict(material: GenerationMaterial) -> dict[str, Any]:
